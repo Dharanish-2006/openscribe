@@ -101,8 +101,8 @@ export default function Dashboard() {
               onClick={() => setTab(t)}
             >
               {t === 'profile' && '👤'}
-              {t === 'security' && '🔐'}
-              {t === 'danger' && '⚠️'}
+              {t === 'security' && '🔒'}
+              {t === 'danger' && '🗑️'}
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
