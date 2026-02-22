@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-=2-0zwe+&j+-o+39l5tw(^7zx4j-)qc5d#ue@y3k$6iv&1#dcm'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['openscribe.onrender.com']
 
