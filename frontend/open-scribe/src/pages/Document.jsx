@@ -1,17 +1,8 @@
-import { useEditor, EditorContent } from "@tiptap/react";
-import { FloatingMenu, BubbleMenu } from "@tiptap/react/menus";
-import StarterKit from "@tiptap/starter-kit";
-
+import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor";
 export default function Document() {
-  const MyEditor = useEditor({
-    extensions: [StarterKit],
-    content: "<p></p>",
-  });
   return (
     <>
-      <EditorContent editor={MyEditor} />
-      <FloatingMenu editor={MyEditor}>🪿</FloatingMenu>
-      <BubbleMenu editor={MyEditor}>Bubble</BubbleMenu>
+      <SimpleEditor/>
     </>
   );
 }

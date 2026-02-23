@@ -7,7 +7,8 @@ import Document from "./Document";
 export default function Dashboard() {
   const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState("profile");
+  const [tab, setTab] = useState("docs");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
     first_name: user?.first_name || "",
     last_name: user?.last_name || "",
@@ -91,47 +92,89 @@ export default function Dashboard() {
     ? (user.first_name?.[0] || user.username?.[0] || "?").toUpperCase()
     : "?";
 
+  const navItems = [
+    { key: "docs", icon: "📃", label: "Docs" },
+    { key: "profile", icon: "👤", label: "Profile" },
+    { key: "security", icon: "🔒", label: "Security" },
+    { key: "danger", icon: "🗑️", label: "Danger" },
+  ];
+
   return (
     <div className="dashboard">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-logo">⬡</div>
-        <div className="sidebar-user">
-          <div className="avatar">{initials}</div>
-          <div>
-            <div className="sidebar-name">
-              {user?.full_name || user?.username}
-            </div>
-            <div className="sidebar-email">{user?.email}</div>
-          </div>
+      {/* Top Navbar */}
+      <nav className="navbar">
+        <div className="navbar-left">
+          <span className="navbar-logo">⬡</span>
+          <span className="navbar-brand">OpenScribe</span>
         </div>
-        <nav className="sidebar-nav">
-          {["Docs", "profile", "security", "danger"].map((t) => (
+
+        <div className="navbar-center">
+          {navItems.map((item) => (
             <button
-              key={t}
-              className={`nav-item ${tab === t ? "active" : ""}`}
-              onClick={() => setTab(t)}
+              key={item.key}
+              className={`nav-item ${tab === item.key ? "active" : ""}`}
+              onClick={() => setTab(item.key)}
             >
-              {t === "Docs" && "📃"}
-              {t === "profile" && "👤"}
-              {t === "security" && "🔒"}
-              {t === "danger" && "🗑️"}
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              <span className="nav-icon">{item.icon}</span>
+              {item.label}
             </button>
           ))}
-        </nav>
-        <button className="logout-btn" onClick={handleLogout}>
-          Sign Out →
-        </button>
-      </aside>
+        </div>
 
-      {/* Main */}
-      <main className="main-content">
-        {tab == "Docs" && (
-          <div className="doc-card">
-            <Document />
+        <div className="navbar-right">
+          <div className="user-menu" onClick={() => setMenuOpen(!menuOpen)}>
+            <div className="avatar">{initials}</div>
+            <div className="user-info">
+              <span className="user-name">
+                {user?.full_name || user?.username}
+              </span>
+            </div>
+            <span className="chevron">{menuOpen ? "▲" : "▼"}</span>
           </div>
-        )}
+
+          {menuOpen && (
+            <div className="dropdown">
+              <div className="dropdown-header">
+                <div className="avatar avatar-lg">{initials}</div>
+                <div>
+                  <div className="dropdown-name">
+                    {user?.full_name || user?.username}
+                  </div>
+                  <div className="dropdown-email">{user?.email}</div>
+                </div>
+              </div>
+              <div className="dropdown-divider" />
+              <button
+                className="dropdown-item"
+                onClick={() => {
+                  setTab("profile");
+                  setMenuOpen(false);
+                }}
+              >
+                👤 Profile Settings
+              </button>
+              <button
+                className="dropdown-item"
+                onClick={() => {
+                  setTab("security");
+                  setMenuOpen(false);
+                }}
+              >
+                🔒 Security
+              </button>
+              <div className="dropdown-divider" />
+              <button className="dropdown-item danger" onClick={handleLogout}>
+                → Sign Out
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="main-content">
+        {tab === "docs" && <Document />}
+
         {tab === "profile" && (
           <section className="tab-panel">
             <div className="panel-header">
@@ -309,6 +352,10 @@ export default function Dashboard() {
           </section>
         )}
       </main>
+
+      {menuOpen && (
+        <div className="dropdown-overlay" onClick={() => setMenuOpen(false)} />
+      )}
     </div>
   );
 }
