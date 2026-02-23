@@ -27,10 +27,11 @@ export default function Document() {
     setLoading(true);
     try {
       const { data } = await documentsAPI.list();
-      setDocs(data);
-      if (data.length > 0) {
-        setActiveDoc(data[0]);
-        setTitle(data[0].title);
+      const list = Array.isArray(data) ? data : (data.results ?? []);
+      setDocs(list);
+      if (list.length > 0) {
+        setActiveDoc(list[0]);
+        setTitle(list[0].title);
       }
     } catch (err) {
       console.error("Failed to load documents", err);
