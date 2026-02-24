@@ -74,11 +74,7 @@ import { handleImageUpload, MAX_FILE_SIZE } from "@/lib/tiptap-utils"
 import "@/components/tiptap-templates/simple/simple-editor.scss"
 
 
-const MainToolbarContent = ({
-  onHighlighterClick,
-  onLinkClick,
-  isMobile
-}) => {
+const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile }) => {
   return (
     <>
       <Spacer />
@@ -132,10 +128,7 @@ const MainToolbarContent = ({
   );
 }
 
-const MobileToolbarContent = ({
-  type,
-  onBack
-}) => (
+const MobileToolbarContent = ({ type, onBack }) => (
   <>
     <ToolbarGroup>
       <Button variant="ghost" onClick={onBack}>
@@ -147,9 +140,7 @@ const MobileToolbarContent = ({
         )}
       </Button>
     </ToolbarGroup>
-
     <ToolbarSeparator />
-
     {type === "highlighter" ? (
       <ColorHighlightPopoverContent />
     ) : (
@@ -158,7 +149,7 @@ const MobileToolbarContent = ({
   </>
 )
 
-export function SimpleEditor() {
+export function SimpleEditor({ initialContent = "", editorRef, onChange }) {
   const isMobile = useIsBreakpoint()
   const { height } = useWindowSize()
   const [mobileView, setMobileView] = useState("main")
@@ -166,6 +157,7 @@ export function SimpleEditor() {
 
   const editor = useEditor({
     immediatelyRender: false,
+    content: initialContent,
     editorProps: {
       attributes: {
         autocomplete: "off",
@@ -183,8 +175,9 @@ export function SimpleEditor() {
           enableClickSelection: true,
         },
       }),
-      Placeholder.configure()
-      ,
+      Placeholder.configure({
+        placeholder: "Start writing...",
+      }),
       HorizontalRule,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       TaskList,
@@ -202,8 +195,23 @@ export function SimpleEditor() {
         upload: handleImageUpload,
         onError: (error) => console.error("Upload failed:", error),
       }),
-    ],    
+    ],
+    onUpdate: ({ editor }) => {
+      // Expose getHTML via editorRef so parent can call it on save
+      if (editorRef) {
+        editorRef.current = { getHTML: () => editor.getHTML() };
+      }
+      // Notify parent that content changed
+      onChange?.();
+    },
   })
+
+  // Expose getHTML immediately when editor is ready
+  useEffect(() => {
+    if (editor && editorRef) {
+      editorRef.current = { getHTML: () => editor.getHTML() };
+    }
+  }, [editor, editorRef])
 
   const rect = useCursorVisibility({
     editor,
@@ -223,20 +231,21 @@ export function SimpleEditor() {
           ref={toolbarRef}
           style={{
             ...(isMobile
-              ? {
-                  bottom: `calc(100% - ${height - rect.y}px)`,
-                }
+              ? { bottom: `calc(100% - ${height - rect.y}px)` }
               : {}),
-          }}>
+          }}
+        >
           {mobileView === "main" ? (
             <MainToolbarContent
               onHighlighterClick={() => setMobileView("highlighter")}
               onLinkClick={() => setMobileView("link")}
-              isMobile={isMobile} />
+              isMobile={isMobile}
+            />
           ) : (
             <MobileToolbarContent
               type={mobileView === "highlighter" ? "highlighter" : "link"}
-              onBack={() => setMobileView("main")} />
+              onBack={() => setMobileView("main")}
+            />
           )}
         </Toolbar>
 
