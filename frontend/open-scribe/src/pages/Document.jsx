@@ -1,6 +1,6 @@
-import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor";
 import { useState, useEffect, useRef } from "react";
 import { documentsAPI } from "../api/documents";
+import { CollaborativeEditor } from "@/components/CollaborativeEditor";
 
 export default function Document() {
   const [docs, setDocs] = useState([]);
@@ -160,11 +160,12 @@ export default function Document() {
                 <button className="btn-new" onClick={handleNew}>＋ New</button>
               </div>
             </div>
-            <SimpleEditor
+
+            <CollaborativeEditor
               key={activeDoc.id}
-              initialContent={activeDoc.content || ""}
+              documentId={activeDoc.id}
               editorRef={editorRef}
-              onChange={markUnsaved}
+              onUpdate={markUnsaved}
             />
           </>
         ) : (

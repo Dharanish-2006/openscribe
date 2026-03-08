@@ -5,7 +5,11 @@
       "destination": "https://openscribe.onrender.com/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/ws/:path*",
+      "destination": "https://openscribe.onrender.com/ws/:path*"
+    },
+    {
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]
