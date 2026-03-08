@@ -1,16 +1,32 @@
 """
-ASGI config for openscribe project.
+ASGI config — wraps Django with Channels for WebSocket support.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+Replace the existing asgi.py entirely with this file.
 """
 
 import os
 
+from channels.auth import AuthMiddlewareStack
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.security.websocket import AllowedHostsOriginValidator
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'openscribe.settings')
+from openscribe.routing import websocket_urlpatterns
 
-application = get_asgi_application()
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "openscribe.settings")
+
+django_asgi_app = get_asgi_application()
+
+application = ProtocolTypeRouter(
+    {
+        # Standard HTTP — handled by Django as normal
+        "http": django_asgi_app,
+
+        # WebSocket — wrapped in origin validation + auth middleware
+        "websocket": AllowedHostsOriginValidator(
+            AuthMiddlewareStack(
+                URLRouter(websocket_urlpatterns)
+            )
+        ),
+    }
+)

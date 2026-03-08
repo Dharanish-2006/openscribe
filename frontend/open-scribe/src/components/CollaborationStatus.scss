@@ -1,0 +1,75 @@
+.collab-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+  user-select: none;
+
+  &__dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+
+  &__avatars {
+    display: flex;
+    gap: 2px;
+  }
+
+  &__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 8px;
+    font-weight: 700;
+    color: #111;
+    border: 1.5px solid var(--color-bg, #1a1a1a);
+    cursor: default;
+    flex-shrink: 0;
+  }
+
+  &__overflow {
+    font-size: 10px;
+    color: var(--color-text-muted, #888);
+    align-self: center;
+  }
+
+  &__label {
+    white-space: nowrap;
+  }
+}
+
+/* Remote cursor styles injected by Tiptap Collaboration Cursor extension */
+.collaboration-cursor__caret {
+  border-left: 2px solid;
+  border-right: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  position: relative;
+  word-break: normal;
+}
+
+.collaboration-cursor__label {
+  border-radius: 3px 3px 3px 0;
+  color: #0d0d0d;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  left: -1px;
+  line-height: normal;
+  padding: 2px 5px;
+  position: absolute;
+  top: -1.4em;
+  user-select: none;
+  white-space: nowrap;
+  font-family: "DM Mono", monospace;
+}
