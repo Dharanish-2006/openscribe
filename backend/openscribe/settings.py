@@ -29,8 +29,11 @@ SECRET_KEY = 'django-insecure-=2-0zwe+&j+-o+39l5tw(^7zx4j-)qc5d#ue@y3k$6iv&1#dcm
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['openscribe.onrender.com']
-
+ALLOWED_HOSTS = ['openscribe.onrender.com',"localhost","127.0.0.1",]
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 # Application definition
 
@@ -46,6 +49,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "channels",
     "documents",
+    "daphne",
 ]
 
 MIDDLEWARE = [
@@ -76,10 +80,15 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'openscribe.wsgi.application'
+ASGI_APPLICATION = "openscribe.asgi.application"
 
 DATABASES = {
     'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
+}
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
 }
 
 
@@ -143,3 +152,17 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 AUTH_USER_MODEL = 'accounts.User'
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "DEBUG",
+    },
+    "loggers": {
+        "documents": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
+    },
+}
