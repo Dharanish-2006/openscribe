@@ -1,4 +1,6 @@
 {
+  "buildCommand": "cd frontend/open-scribe && npm install --legacy-peer-deps && npm run build",
+  "outputDirectory": "frontend/open-scribe/dist",
   "rewrites": [
     {
       "source": "/api/:path*",
