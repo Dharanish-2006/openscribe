@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "channels",
     "documents",
     "daphne",
+    "ping"
 ]
 
 MIDDLEWARE = [
