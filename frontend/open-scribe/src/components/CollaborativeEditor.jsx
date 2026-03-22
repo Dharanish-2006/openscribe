@@ -182,9 +182,27 @@ export function CollaborativeEditor({
   const { height } = useWindowSize()
   const [mobileView, setMobileView] = useState("main")
   const toolbarRef = useRef(null)
-  const { ydoc, awareness, status, peers, provider, initialContentRef } = useCollaboration(documentId)
+  const { ydoc, awareness, status, peers, provider, needsSeed, initialContentRef } = useCollaboration(documentId)
   // Store initialContent in ref so the hook can read it without it being a dependency
   if (initialContentRef) initialContentRef.current = initialContent
+
+  // Seed editor with saved DB content when Y.Doc is empty after sync
+  // Using editor.commands.setContent ensures Tiptap parses HTML correctly
+  // into the Y.Doc with proper schema structure
+  useEffect(() => {
+    if (!editor || !needsSeed || !initialContent) return
+    // Small delay to ensure editor is fully mounted
+    const t = setTimeout(() => {
+      try {
+        editor.commands.setContent(initialContent, false)
+      } catch (e) {
+        console.warn("[collab] seed setContent failed:", e)
+      }
+    }, 50)
+    return () => clearTimeout(t)
+  }, [editor, needsSeed, initialContent])
+
+
 
   const editor = useEditor(
     {

@@ -155,16 +155,12 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
   const session = documentId ? sessions.get(documentId) : null;
 
   return {
-    // Return ydoc only when synced — editor waits before mounting
     ydoc: synced ? (session?.ydoc ?? null) : null,
     awareness: session?.awareness ?? null,
     provider: session?.provider ?? null,
     status,
     peers,
-    // Expose setter so CollaborativeEditor can update initialContent ref
-    setInitialContent: (html) => {
-      if (session) initialContentRef.current = html;
-    },
+    needsSeed: synced && (session?.needsSeed ?? false),
     initialContentRef,
   };
 }
