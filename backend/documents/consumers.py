@@ -1,3 +1,8 @@
+"""
+Y.js WebSocket consumer for real-time document collaboration.
+Uses ThreadPoolExecutor for DB calls to avoid Python 3.14 async deadlocks.
+"""
+
 import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +18,7 @@ MSG_SYNC_STEP_1 = 0
 MSG_SYNC_STEP_2 = 1
 MSG_UPDATE = 2
 MSG_AWARENESS = 3
+MSG_HTML = 4  # Client sends current HTML for DB persistence
 
 
 def _sync_authenticate(token_str):
@@ -36,6 +42,16 @@ def _sync_check_access(document_id, user_id_str):
     except Exception as exc:
         logger.warning("[yjs] access check error: %s", exc)
         return False
+
+
+def _sync_save_html(document_id, html):
+    """Save HTML content to the Document model for persistence across restarts."""
+    try:
+        from documents.models import Document
+        Document.objects.filter(id=document_id).update(content=html)
+        logger.debug("[yjs] saved HTML to DB doc=%s len=%d", document_id, len(html))
+    except Exception as exc:
+        logger.warning("[yjs] failed to save HTML doc=%s error=%s", document_id, exc)
 
 
 class YjsDocumentConsumer(AsyncWebsocketConsumer):
@@ -103,38 +119,56 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         if not bytes_data:
             return
+
+        # Guard: ignore text frames
         if isinstance(bytes_data, str):
             return
+
         msg_type = bytes_data[0]
         payload = bytes_data[1:]
+
         try:
             if msg_type == MSG_SYNC_STEP_1:
+                # Client is syncing — send back everything we have
                 state = _store.get_state(self.document_id)
                 if state:
                     await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, state))
 
             elif msg_type == MSG_UPDATE:
+                # Store the update in memory
                 _store.apply_update(self.document_id, payload)
+                # Broadcast to all other peers in this document's room
                 await self.channel_layer.group_send(self.room_group, {
                     "type": "yjs.update",
                     "sender": self.channel_name,
                     "data": list(bytes_data),
                 })
+
+            elif msg_type == MSG_HTML:
+                # Client sends current HTML — persist to DB
+                html = bytes_data[1:].decode('utf-8', errors='replace')
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(_db_executor, _sync_save_html, self.document_id, html)
+
             elif msg_type == MSG_AWARENESS:
+                # Relay presence/cursor info — not stored
                 await self.channel_layer.group_send(self.room_group, {
                     "type": "yjs.awareness",
                     "sender": self.channel_name,
                     "data": list(bytes_data),
                 })
+
         except Exception as exc:
             logger.exception("[yjs] receive error: %s", exc)
 
     async def yjs_update(self, event):
+        """Relay a Y.js update to this client, skip the sender."""
         if event["sender"] == self.channel_name:
             return
         await self.send(bytes_data=bytes(event["data"]))
 
     async def yjs_awareness(self, event):
+        """Relay awareness to this client, skip the sender."""
         if event["sender"] == self.channel_name:
             return
         await self.send(bytes_data=bytes(event["data"]))
