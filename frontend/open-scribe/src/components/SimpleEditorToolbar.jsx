@@ -1,5 +1,11 @@
 "use client"
+/**
+ * SimpleEditorToolbar
+ * ALL tiptap-ui imports are isolated here and lazy-loaded by CollaborativeEditor.
+ * This prevents the circular dependency that causes the bundle initialization crash.
+ */
 import { useRef, useEffect } from "react"
+
 import { Button } from "@/components/tiptap-ui-primitive/button"
 import { Spacer } from "@/components/tiptap-ui-primitive/spacer"
 import {
@@ -8,8 +14,6 @@ import {
   ToolbarSeparator,
 } from "@/components/tiptap-ui-primitive/toolbar"
 
-import { ImageUploadNode } from "@/components/tiptap-node/image-upload-node/image-upload-node-extension"
-import { HorizontalRule } from "@/components/tiptap-node/horizontal-rule-node/horizontal-rule-node-extension"
 import "@/components/tiptap-node/blockquote-node/blockquote-node.scss"
 import "@/components/tiptap-node/code-block-node/code-block-node.scss"
 import "@/components/tiptap-node/horizontal-rule-node/horizontal-rule-node.scss"
@@ -42,7 +46,6 @@ import { LinkIcon } from "@/components/tiptap-icons/link-icon"
 
 import { useIsBreakpoint } from "@/hooks/use-is-breakpoint"
 import { useWindowSize } from "@/hooks/use-window-size"
-import { useCursorVisibility } from "@/hooks/use-cursor-visibility"
 
 import { ThemeToggle } from "@/components/tiptap-templates/simple/theme-toggle"
 import "@/components/tiptap-templates/simple/simple-editor.scss"
@@ -63,8 +66,12 @@ const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabS
       <MarkButton type="strike" />
       <MarkButton type="code" />
       <MarkButton type="underline" />
-      {!isMobile ? <ColorHighlightPopover /> : <ColorHighlightPopoverButton onClick={onHighlighterClick} />}
-      {!isMobile ? <LinkPopover /> : <LinkButton onClick={onLinkClick} />}
+      {!isMobile
+        ? <ColorHighlightPopover />
+        : <ColorHighlightPopoverButton onClick={onHighlighterClick} />}
+      {!isMobile
+        ? <LinkPopover />
+        : <LinkButton onClick={onLinkClick} />}
     </ToolbarGroup>
     <ToolbarSeparator />
     <ToolbarGroup>

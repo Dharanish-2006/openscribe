@@ -3,6 +3,7 @@ import Placeholder from "@tiptap/extension-placeholder"
 import { useEffect, useRef, useState, lazy, Suspense } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
+// Core Tiptap extensions only — NO tiptap-ui imports here (causes circular deps)
 import { StarterKit } from "@tiptap/starter-kit"
 import { Image } from "@tiptap/extension-image"
 import { TaskItem, TaskList } from "@tiptap/extension-list"
@@ -13,17 +14,16 @@ import { Subscript } from "@tiptap/extension-subscript"
 import { Superscript } from "@tiptap/extension-superscript"
 import { Selection } from "@tiptap/extensions"
 import Collaboration from "@tiptap/extension-collaboration"
-import { ImageUploadNode } from "@/components/tiptap-node/image-upload-node/image-upload-node-extension"
-import { HorizontalRule } from "@/components/tiptap-node/horizontal-rule-node/horizontal-rule-node-extension"
-import { handleImageUpload, MAX_FILE_SIZE } from "@/lib/tiptap-utils"
 
+// Collaboration-specific imports
 import { CollaborationCursorV3 } from "../lib/CollaborationCursorV3"
 import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 import "./CollaborationStatus.scss"
 
-// Lazy-load the toolbar to break circular dependency with tiptap-ui components
+// Toolbar is lazy-loaded in its own chunk to break circular dependency
+// All tiptap-ui/* imports live in SimpleEditorToolbar, never in this file
 const SimpleEditorToolbar = lazy(() =>
   import("./SimpleEditorToolbar").then(m => ({ default: m.SimpleEditorToolbar }))
 )
@@ -39,6 +39,7 @@ export function CollaborativeEditor({
   const { ydoc, awareness, status, peers, provider, needsSeed, initialContentRef } =
     useCollaboration(documentId)
 
+  // Keep initialContent ref updated on every render (no effect needed, no dep issues)
   if (initialContentRef) initialContentRef.current = initialContent
 
   const editor = useEditor(
@@ -60,7 +61,6 @@ export function CollaborativeEditor({
           link: { openOnClick: false, enableClickSelection: true },
         }),
         Placeholder.configure({ placeholder: "Start writing..." }),
-        HorizontalRule,
         TextAlign.configure({ types: ["heading", "paragraph"] }),
         TaskList,
         TaskItem.configure({ nested: true }),
@@ -70,13 +70,6 @@ export function CollaborativeEditor({
         Superscript,
         Subscript,
         Selection,
-        ImageUploadNode.configure({
-          accept: "image/*",
-          maxSize: MAX_FILE_SIZE,
-          limit: 3,
-          upload: handleImageUpload,
-          onError: (error) => console.error("Upload failed:", error),
-        }),
         ...(ydoc ? [
           Collaboration.configure({ document: ydoc }),
           CollaborationCursorV3.configure({ awareness }),
@@ -85,22 +78,28 @@ export function CollaborativeEditor({
       onUpdate: ({ editor }) => {
         if (externalRef) externalRef.current = editor
         onUpdate?.({ editor })
+        // Send HTML to backend via WebSocket for DB persistence
         if (provider) provider.sendHtml(editor.getHTML())
       },
     },
     [ydoc]
   )
 
-  // Seed editor with DB content when Y.Doc is empty after sync
+  // Seed editor with saved DB content when Y.Doc was empty after server sync
+  // Uses editor.commands.setContent — the only reliable way to parse HTML into Y.Doc
   useEffect(() => {
-    if (!editor || !needsSeed || !initialContent) return
+    if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
     const t = setTimeout(() => {
-      try { editor.commands.setContent(initialContent, false) }
-      catch (e) { console.warn("[collab] seed failed:", e) }
-    }, 50)
+      try {
+        editor.commands.setContent(initialContent, false)
+      } catch (e) {
+        console.warn("[collab] seed setContent failed:", e)
+      }
+    }, 100)
     return () => clearTimeout(t)
   }, [editor, needsSeed, initialContent])
 
+  // Keep externalRef in sync
   useEffect(() => {
     if (editor && externalRef) externalRef.current = editor
   }, [editor, externalRef])
@@ -110,7 +109,7 @@ export function CollaborativeEditor({
   return (
     <div className="simple-editor-wrapper">
       <EditorContext.Provider value={{ editor }}>
-        <Suspense fallback={<div className="toolbar-loading" />}>
+        <Suspense fallback={<div style={{ height: "40px" }} />}>
           <SimpleEditorToolbar
             mobileView={mobileView}
             setMobileView={setMobileView}
@@ -119,7 +118,6 @@ export function CollaborativeEditor({
             }
           />
         </Suspense>
-
         <EditorContent
           editor={editor}
           role="presentation"
