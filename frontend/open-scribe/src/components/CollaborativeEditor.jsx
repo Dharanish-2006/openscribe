@@ -30,7 +30,6 @@ const SimpleEditorToolbar = lazy(() =>
 export function CollaborativeEditor({
   documentId,
   onUpdate,
-  editorRef: externalRef,
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
@@ -88,9 +87,6 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
-        // Suppress onUpdate during seeding to prevent saving empty content
-        if (suppressUpdate.current) return
-        if (externalRef) externalRef.current = editor
         onUpdate?.({ editor })
       },
     },
@@ -129,13 +125,7 @@ export function CollaborativeEditor({
   // but reset defensively in case of re-use)
   useEffect(() => {
     hasSeeded.current = false
-    suppressUpdate.current = false
   }, [documentId])
-
-  // Keep externalRef in sync when editor instance changes
-  useEffect(() => {
-    if (editor && externalRef) externalRef.current = editor
-  }, [editor, externalRef])
 
   useCursorSync(editor, awareness)
 

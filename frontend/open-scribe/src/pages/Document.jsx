@@ -10,11 +10,12 @@ export default function Document() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const editorRef = useRef(null);
   const activeDocRef = useRef(null);
   const titleRef = useRef("");
   const debounceTimer = useRef(null);
-  const abortRef = useRef(null); // AbortController for in-flight PATCH
+  const abortRef = useRef(null);
+  // Holds the latest captured HTML — updated every onUpdate, read by handleSave
+  const pendingContentRef = useRef("");
 
   useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
   useEffect(() => { titleRef.current = title; }, [title]);
@@ -38,28 +39,28 @@ export default function Document() {
   };
 
   /**
-   * Save immediately — cancels any in-flight request before sending a new one.
-   * This ensures only the latest content reaches the DB.
+   * Save the content that was captured at schedule time.
+   * Cancels any in-flight request before sending.
    */
   const handleSave = useCallback(async () => {
     const doc = activeDocRef.current;
     if (!doc) return;
 
-    const html = editorRef.current?.getHTML?.() ?? "";
-    const content = html && html !== "<p></p>" ? html : doc.content ?? "";
-    const title = titleRef.current;
+    // Read content captured at the time the last onUpdate fired
+    const content = pendingContentRef.current || doc.content || "";
 
-    // Cancel the previous in-flight request if still pending
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+    // Skip saving empty content — prevents wiping real data
+    if (!content || content === "<p></p>") return;
+
+    // Cancel previous in-flight request
+    if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
 
     setSaving(true);
     try {
       const { data } = await documentsAPI.update(
         doc.id,
-        { title, content },
+        { title: titleRef.current, content },
         { signal: abortRef.current.signal }
       );
       setDocs(prev => prev.map(d => d.id === data.id ? data : d));
@@ -67,10 +68,7 @@ export default function Document() {
       activeDocRef.current = data;
       setSaved(true);
     } catch (err) {
-      if (err.name === "CanceledError" || err.code === "ERR_CANCELED") {
-        // Request was superseded by a newer one — not an error
-        return;
-      }
+      if (err.name === "CanceledError" || err.code === "ERR_CANCELED") return;
       console.error("Save failed", err);
     } finally {
       setSaving(false);
@@ -78,26 +76,34 @@ export default function Document() {
   }, []);
 
   /**
-   * Schedule a debounced save. Any rapid keystrokes reset the timer.
-   * Only the save that fires after the user pauses for 1.5s actually runs.
+   * Capture content NOW (at keystroke time) and schedule a debounced save.
+   * The debounce timer resets on every call — only the final pause triggers save.
+   * Content is captured immediately so it's never stale when handleSave runs.
    */
-  const scheduleAutoSave = useCallback(() => {
+  const scheduleAutoSave = useCallback((html) => {
+    // Capture the content at this exact moment
+    if (html && html !== "<p></p>") {
+      pendingContentRef.current = html;
+    }
     clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(handleSave, 1500);
   }, [handleSave]);
 
-  const cancelPendingSave = useCallback(() => {
+  const flushAndSave = useCallback(async (html) => {
     clearTimeout(debounceTimer.current);
-  }, []);
+    if (html && html !== "<p></p>") pendingContentRef.current = html;
+    await handleSave();
+  }, [handleSave]);
 
   const handleNew = async () => {
-    cancelPendingSave();
-    if (!saved) await handleSave();
+    clearTimeout(debounceTimer.current);
+    if (!saved) await flushAndSave();
     try {
       const { data } = await documentsAPI.create({ title: "Untitled", content: "" });
       setDocs(prev => [data, ...prev]);
       setActiveDoc(data);
       setTitle(data.title);
+      pendingContentRef.current = "";
       setSaved(true);
     } catch (err) {
       console.error("Failed to create document", err);
@@ -106,10 +112,11 @@ export default function Document() {
 
   const handleSwitch = async (doc) => {
     if (doc.id === activeDocRef.current?.id) return;
-    cancelPendingSave();
-    if (!saved) await handleSave();
+    clearTimeout(debounceTimer.current);
+    if (!saved) await flushAndSave();
     setActiveDoc(doc);
     setTitle(doc.title);
+    pendingContentRef.current = "";
     setSaved(true);
   };
 
@@ -124,6 +131,7 @@ export default function Document() {
         const next = updated[0] || null;
         setActiveDoc(next);
         setTitle(next?.title || "");
+        pendingContentRef.current = "";
         setSaved(true);
       }
     } catch (err) {
@@ -160,7 +168,10 @@ export default function Document() {
             >
               <div className="doc-item-name">📄 {doc.title || "Untitled"}</div>
               <div className="doc-item-meta">{formatDate(doc.updated_at)}</div>
-              <button className="doc-delete-btn" onClick={e => handleDelete(doc.id, e)}>✕</button>
+              <button
+                className="doc-delete-btn"
+                onClick={e => handleDelete(doc.id, e)}
+              >✕</button>
             </div>
           ))}
         </div>
@@ -176,7 +187,8 @@ export default function Document() {
                 onChange={e => {
                   setTitle(e.target.value);
                   setSaved(false);
-                  scheduleAutoSave();
+                  // Title changes: use current pendingContent or last known content
+                  scheduleAutoSave(pendingContentRef.current || activeDoc.content);
                 }}
                 placeholder="Document title..."
               />
@@ -184,7 +196,9 @@ export default function Document() {
                 <span className={`save-status ${saved ? "saved" : "unsaved"}`}>
                   {saving ? "Saving..." : saved ? "✓ Saved" : "● Unsaved"}
                 </span>
-                <button className="btn-save" onClick={handleSave} disabled={saving}>Save</button>
+                <button className="btn-save" onClick={() => flushAndSave()} disabled={saving}>
+                  Save
+                </button>
                 <button className="btn-new" onClick={handleNew}>＋ New</button>
               </div>
             </div>
@@ -193,12 +207,11 @@ export default function Document() {
               key={activeDoc.id}
               documentId={activeDoc.id}
               initialContent={activeDoc.content || ""}
-              editorRef={editorRef}
               onUpdate={({ editor }) => {
-                // editorRef is updated here so handleSave always reads latest HTML
-                editorRef.current = editor;
+                // Capture HTML immediately at keystroke time — never read later from ref
+                const html = editor.getHTML();
                 setSaved(false);
-                scheduleAutoSave();
+                scheduleAutoSave(html);
               }}
             />
           </>
