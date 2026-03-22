@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+// VITE_API_URL = https://openscribe.onrender.com/api/auth  (production)
+// VITE_API_URL = http://localhost:8000/api/auth             (local)
 const BASE = import.meta.env.VITE_API_URL
 
 const api = axios.create({
@@ -13,7 +15,6 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Auto-refresh on 401
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -23,10 +24,7 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem('refresh_token')
       if (refresh) {
         try {
-          const { data } = await axios.post(
-            `${BASE}/api/auth/token/refresh/`,
-            { refresh }
-          )
+          const { data } = await axios.post(`${BASE}/token/refresh/`, { refresh })
           localStorage.setItem('access_token', data.access)
           original.headers.Authorization = `Bearer ${data.access}`
           return api(original)
@@ -42,13 +40,13 @@ api.interceptors.response.use(
 )
 
 export const authAPI = {
-  register:       (data) => api.post('/api/auth/register/', data),
-  login:          (data) => api.post('/api/auth/login/', data),
-  logout:         (refresh) => api.post('/api/auth/logout/', { refresh }),
-  getProfile:     ()     => api.get('/api/auth/profile/'),
-  updateProfile:  (data) => api.patch('/api/auth/profile/', data),
-  changePassword: (data) => api.post('/api/auth/change-password/', data),
-  deleteAccount:  ()     => api.delete('/api/auth/delete-account/'),
+  register:       (data) => api.post('/register/', data),
+  login:          (data) => api.post('/login/', data),
+  logout:         (refresh) => api.post('/logout/', { refresh }),
+  getProfile:     ()     => api.get('/profile/'),
+  updateProfile:  (data) => api.patch('/profile/', data),
+  changePassword: (data) => api.post('/change-password/', data),
+  deleteAccount:  ()     => api.delete('/delete-account/'),
 }
 
 export default api
