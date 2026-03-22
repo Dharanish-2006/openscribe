@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({
+  baseURL: `${import.meta.env.VITE_API_URL}/api`,
+})
 
 api.interceptors.request.use(cfg => {
   const token = localStorage.getItem('access_token')
@@ -9,9 +11,9 @@ api.interceptors.request.use(cfg => {
 })
 
 export const documentsAPI = {
-  list: () => api.get('/documents/'),
-  get: (id) => api.get(`/documents/${id}/`),
-  create: (data) => api.post('/documents/', data),
+  list:   ()         => api.get('/documents/'),
+  get:    (id)       => api.get(`/documents/${id}/`),
+  create: (data)     => api.post('/documents/', data),
   update: (id, data) => api.patch(`/documents/${id}/`, data),
-  delete: (id) => api.delete(`/documents/${id}/`),
+  delete: (id)       => api.delete(`/documents/${id}/`),
 }

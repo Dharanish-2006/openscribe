@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const BASE = import.meta.env.VITE_API_URL
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: BASE,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -21,7 +23,10 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem('refresh_token')
       if (refresh) {
         try {
-          const { data } = await axios.post('/api/auth/token/refresh/', { refresh })
+          const { data } = await axios.post(
+            `${BASE}/api/auth/token/refresh/`,
+            { refresh }
+          )
           localStorage.setItem('access_token', data.access)
           original.headers.Authorization = `Bearer ${data.access}`
           return api(original)
@@ -37,13 +42,13 @@ api.interceptors.response.use(
 )
 
 export const authAPI = {
-  register: (data) => api.post('/register/', data),
-  login: (data) => api.post('/login/', data),
-  logout: (refresh) => api.post('/logout/', { refresh }),
-  getProfile: () => api.get('/profile/'),
-  updateProfile: (data) => api.patch('/profile/', data),
-  changePassword: (data) => api.post('/change-password/', data),
-  deleteAccount: () => api.delete('/delete-account/'),
+  register:       (data) => api.post('/api/auth/register/', data),
+  login:          (data) => api.post('/api/auth/login/', data),
+  logout:         (refresh) => api.post('/api/auth/logout/', { refresh }),
+  getProfile:     ()     => api.get('/api/auth/profile/'),
+  updateProfile:  (data) => api.patch('/api/auth/profile/', data),
+  changePassword: (data) => api.post('/api/auth/change-password/', data),
+  deleteAccount:  ()     => api.delete('/api/auth/delete-account/'),
 }
 
 export default api
