@@ -58,6 +58,7 @@ export function CollaborativeEditor({
         StarterKit.configure({
           horizontalRule: false,
           history: false,
+          undoRedo: false,
           link: { openOnClick: false, enableClickSelection: true },
         }),
         Placeholder.configure({ placeholder: "Start writing..." }),
@@ -78,8 +79,11 @@ export function CollaborativeEditor({
       onUpdate: ({ editor }) => {
         if (externalRef) externalRef.current = editor
         onUpdate?.({ editor })
-        // Send HTML to backend via WebSocket for DB persistence
-        if (provider) provider.sendHtml(editor.getHTML())
+        // Send HTML via WebSocket for DB persistence — skip empty content
+        const html = editor.getHTML()
+        if (provider && html && html !== "<p></p>") {
+          provider.sendHtml(html)
+        }
       },
     },
     [ydoc]

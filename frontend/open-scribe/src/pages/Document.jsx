@@ -17,9 +17,7 @@ export default function Document() {
   useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
   useEffect(() => { titleRef.current = title; }, [title]);
 
-  useEffect(() => {
-    fetchDocs();
-  }, []);
+  useEffect(() => { fetchDocs(); }, []);
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -41,8 +39,13 @@ export default function Document() {
   const handleSave = useCallback(async () => {
     const doc = activeDocRef.current;
     if (!doc) return;
-
-    const content = editorRef.current?.getHTML?.() ?? doc.content ?? "";
+    // Get HTML from editor — if editor not ready, use the last known DB content
+    const editor = editorRef.current;
+    const html = editor?.getHTML?.() ?? "";
+    // Don't save empty content over real content
+    const content = (html && html !== "<p></p>" && html.trim() !== "")
+      ? html
+      : doc.content ?? "";
     setSaving(true);
     try {
       const { data } = await documentsAPI.update(doc.id, {
@@ -114,9 +117,7 @@ export default function Document() {
     });
   };
 
-  if (loading) {
-    return <div className="doc-loading"><span className="spinner" /></div>;
-  }
+  if (loading) return <div className="doc-loading"><span className="spinner" /></div>;
 
   return (
     <div className="doc-layout">
@@ -126,9 +127,7 @@ export default function Document() {
           <button className="new-doc-btn" onClick={handleNew} title="New Document">＋</button>
         </div>
         <div className="doc-list">
-          {docs.length === 0 && (
-            <div className="doc-empty">No documents yet.<br />Click ＋ to start.</div>
-          )}
+          {docs.length === 0 && <div className="doc-empty">No documents yet.<br />Click ＋ to start.</div>}
           {docs.map((doc) => (
             <div
               key={doc.id}
@@ -137,11 +136,7 @@ export default function Document() {
             >
               <div className="doc-item-name">📄 {doc.title || "Untitled"}</div>
               <div className="doc-item-meta">{formatDate(doc.updated_at)}</div>
-              <button
-                className="doc-delete-btn"
-                onClick={(e) => handleDelete(doc.id, e)}
-                title="Delete"
-              >✕</button>
+              <button className="doc-delete-btn" onClick={(e) => handleDelete(doc.id, e)} title="Delete">✕</button>
             </div>
           ))}
         </div>
@@ -154,11 +149,7 @@ export default function Document() {
               <input
                 className="doc-title-input"
                 value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setSaved(false);
-                  scheduleAutoSave();
-                }}
+                onChange={(e) => { setTitle(e.target.value); setSaved(false); scheduleAutoSave(); }}
                 placeholder="Document title..."
               />
               <div className="doc-actions">
@@ -177,17 +168,19 @@ export default function Document() {
               editorRef={editorRef}
               onUpdate={({ editor }) => {
                 editorRef.current = editor;
-                setSaved(false);
-                scheduleAutoSave();
+                // Only mark unsaved and schedule save if content is not empty
+                const html = editor.getHTML();
+                if (html && html !== "<p></p>") {
+                  setSaved(false);
+                  scheduleAutoSave();
+                }
               }}
             />
           </>
         ) : (
           <div className="doc-no-selection">
             <p>No document selected</p>
-            <button className="btn-primary" onClick={handleNew}>
-              Create your first document
-            </button>
+            <button className="btn-primary" onClick={handleNew}>Create your first document</button>
           </div>
         )}
       </div>
