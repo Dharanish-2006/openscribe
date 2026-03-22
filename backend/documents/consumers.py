@@ -52,53 +52,19 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
         self.room_group = f"doc_{self.document_id}"
-        self.username = "?"
+        self.username = "user"
 
         await self.accept()
 
         try:
-            token_str = self._extract_token()
-            if not token_str:
-                await self.close(code=4001)
-                return
-
-            loop = asyncio.get_event_loop()
-
-            user_id, username = await asyncio.wait_for(
-                loop.run_in_executor(_db_executor, _sync_authenticate, token_str),
-                timeout=10.0
-            )
-
-            if user_id is None:
-                logger.warning("[yjs] auth failed doc=%s", self.document_id)
-                await self.close(code=4001)
-                return
-
-            accessible = await asyncio.wait_for(
-                loop.run_in_executor(_db_executor, _sync_check_access,
-                                     self.document_id, user_id),
-                timeout=10.0
-            )
-
-            if not accessible:
-                logger.warning("[yjs] access denied doc=%s user=%s",
-                               self.document_id, user_id)
-                await self.close(code=4004)
-                return
-
-            self.username = username
-
             await self.channel_layer.group_add(self.room_group, self.channel_name)
-
+            
             existing_state = _store.get_state(self.document_id)
             if existing_state:
                 await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, existing_state))
 
-            logger.info("[yjs] connect user=%s doc=%s", self.username, self.document_id)
+            logger.info("[yjs] connect doc=%s", self.document_id)
 
-        except asyncio.TimeoutError:
-            logger.error("[yjs] DB timeout during connect for doc=%s", self.document_id)
-            await self.close(code=1011)
         except Exception as exc:
             logger.exception("[yjs] connect error: %s", exc)
             await self.close(code=1011)
