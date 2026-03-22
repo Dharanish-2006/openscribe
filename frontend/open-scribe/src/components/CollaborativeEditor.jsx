@@ -1,7 +1,7 @@
 "use client"
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useState } from "react"
-import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
+import { EditorContent, EditorContext, useEditor, useCurrentEditor } from "@tiptap/react"
 
 import { StarterKit } from "@tiptap/starter-kit"
 import { Image } from "@tiptap/extension-image"
@@ -49,7 +49,7 @@ import {
 } from "@/components/tiptap-ui/link-popover"
 import { MarkButton } from "@/components/tiptap-ui/mark-button"
 import { TextAlignButton } from "@/components/tiptap-ui/text-align-button"
-import { UndoRedoButton } from "@/components/tiptap-ui/undo-redo-button"
+// UndoRedoButton replaced with Y.js-compatible version below
 
 import { ArrowLeftIcon } from "@/components/tiptap-icons/arrow-left-icon"
 import { HighlighterIcon } from "@/components/tiptap-icons/highlighter-icon"
@@ -69,14 +69,51 @@ import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 
+
+// ─── Y.js undo/redo (replaces UndoRedoButton which uses history API) ─────────
+
+function YjsUndoButton({ action }) {
+  const { editor } = useCurrentEditor()
+  const isUndo = action === "undo"
+
+  const handleClick = () => {
+    if (!editor) return
+    if (isUndo) {
+      editor.chain().focus().undo().run()
+    } else {
+      editor.chain().focus().redo().run()
+    }
+  }
+
+  const canDo = () => {
+    if (!editor) return false
+    try {
+      return isUndo ? editor.can().undo() : editor.can().redo()
+    } catch {
+      return false
+    }
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      onClick={handleClick}
+      disabled={!canDo()}
+      title={isUndo ? "Undo" : "Redo"}
+    >
+      <span className="tiptap-button-icon">{isUndo ? "↩" : "↪"}</span>
+    </Button>
+  )
+}
+
 // ─── Toolbar ────────────────────────────────────────────────────────────────
 
 const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus }) => (
   <>
     <Spacer />
     <ToolbarGroup>
-      <UndoRedoButton action="undo" />
-      <UndoRedoButton action="redo" />
+      <YjsUndoButton action="undo" />
+      <YjsUndoButton action="redo" />
     </ToolbarGroup>
     <ToolbarSeparator />
     <ToolbarGroup>
