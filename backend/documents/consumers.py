@@ -7,8 +7,6 @@ from .yjs_store import YjsDocumentStore
 
 logger = logging.getLogger(__name__)
 _store = YjsDocumentStore()
-
-# Single shared thread pool for DB work
 _db_executor = ThreadPoolExecutor(max_workers=4)
 
 MSG_SYNC_STEP_1 = 0
@@ -18,12 +16,6 @@ MSG_AWARENESS = 3
 
 
 def _sync_authenticate(token_str):
-    """Pure sync — validate JWT, return (user_id_str, username) or (None, None)."""
-    try:
-        import django
-        django.setup()
-    except RuntimeError:
-        pass
     try:
         from rest_framework_simplejwt.tokens import AccessToken
         from django.contrib.auth import get_user_model
@@ -37,7 +29,6 @@ def _sync_authenticate(token_str):
 
 
 def _sync_check_access(document_id, user_id_str):
-    """Pure sync — return True if user owns doc or doc is public."""
     try:
         from documents.models import Document
         doc = Document.objects.get(id=document_id)
@@ -53,16 +44,51 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
         self.room_group = f"doc_{self.document_id}"
         self.username = "?"
+
         await self.accept()
+
         try:
+            token_str = self._extract_token()
+            if not token_str:
+                await self.close(code=4001)
+                return
+
+            loop = asyncio.get_event_loop()
+
+            user_id, username = await asyncio.wait_for(
+                loop.run_in_executor(_db_executor, _sync_authenticate, token_str),
+                timeout=10.0
+            )
+
+            if user_id is None:
+                await self.close(code=4001)
+                return
+
+            accessible = await asyncio.wait_for(
+                loop.run_in_executor(_db_executor, _sync_check_access,
+                                     self.document_id, user_id),
+                timeout=10.0
+            )
+
+            if not accessible:
+                await self.close(code=4004)
+                return
+
+            self.username = username
             await self.channel_layer.group_add(self.room_group, self.channel_name)
+
+            # Send existing Y.js state to new client so they fast-forward
             existing_state = _store.get_state(self.document_id)
             if existing_state:
                 await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, existing_state))
-            print(f"[yjs] CONNECTED doc={self.document_id}", flush=True)
+
+            logger.info("[yjs] connect user=%s doc=%s", self.username, self.document_id)
+
+        except asyncio.TimeoutError:
+            logger.error("[yjs] DB timeout doc=%s", self.document_id)
+            await self.close(code=1011)
         except Exception as exc:
-            import traceback
-            print(f"[yjs] CONNECT ERROR: {traceback.format_exc()}", flush=True)
+            logger.exception("[yjs] connect error: %s", exc)
             await self.close(code=1011)
 
     async def disconnect(self, close_code):
@@ -77,6 +103,8 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         if not bytes_data:
             return
+        if isinstance(bytes_data, str):
+            return
         msg_type = bytes_data[0]
         payload = bytes_data[1:]
         try:
@@ -84,9 +112,9 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
                 state = _store.get_state(self.document_id)
                 if state:
                     await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, state))
+
             elif msg_type == MSG_UPDATE:
                 _store.apply_update(self.document_id, payload)
-                await self._save_html_to_db()
                 await self.channel_layer.group_send(self.room_group, {
                     "type": "yjs.update",
                     "sender": self.channel_name,
