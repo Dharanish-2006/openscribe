@@ -34,8 +34,8 @@ export function CollaborativeEditor({
 }) {
   const [mobileView, setMobileView] = useState("main")
   const hasSeeded = useRef(false)
-  // When true, onUpdate is suppressed — prevents seeding from triggering a save
-  const suppressUpdate = useRef(false)
+  // Tracks whether user has typed since mount — if so, cancel pending seed
+  const userHasTyped = useRef(false)
 
   const { ydoc, awareness, status, peers, needsSeed, initialContentRef } =
     useCollaboration(documentId)
@@ -85,37 +85,43 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
-        // Skip saves triggered by seeding — they contain empty/partial content
-        if (suppressUpdate.current) return
+        // Mark that user has typed — prevents seeding from overwriting their input
+        userHasTyped.current = true
         onUpdate?.({ editor })
       },
     },
     [ydoc]
   )
 
-  // Seed editor with saved DB content when Y.Doc is empty after server sync
+  // Seed editor with DB content when Y.Doc is empty after server sync.
+  // Only runs if user hasn't typed yet.
   useEffect(() => {
     if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
     if (hasSeeded.current) return
-    hasSeeded.current = true
 
     const t = setTimeout(() => {
-      suppressUpdate.current = true
+      // Abort if user typed during the 150ms delay
+      if (userHasTyped.current) return
+
+      hasSeeded.current = true
       try {
+        // Temporarily disconnect onUpdate so seeding doesn't trigger a save
+        // by calling setContent with emitUpdate=false
         editor.commands.setContent(initialContent, false)
+        // Notify parent of the seeded content so pendingContentRef is correct
+        onUpdate?.({ editor })
       } catch (e) {
         console.warn("[collab] seed failed:", e)
-      } finally {
-        setTimeout(() => { suppressUpdate.current = false }, 300)
       }
     }, 150)
 
     return () => clearTimeout(t)
   }, [editor, needsSeed, initialContent])
 
+  // Reset on document switch
   useEffect(() => {
     hasSeeded.current = false
-    suppressUpdate.current = false
+    userHasTyped.current = false
   }, [documentId])
 
   useCursorSync(editor, awareness)
