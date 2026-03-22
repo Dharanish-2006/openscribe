@@ -1,21 +1,3 @@
-/**
- * YjsWebSocketProvider
- *
- * A custom WebSocket provider that implements the y-websocket binary protocol
- * and connects to our Django Channels backend.
- *
- * Protocol (first byte of each binary message):
- *   0  sync-step-1  : send local state vector → server replies with missing updates
- *   1  sync-step-2  : receive server state (apply to local Y.Doc)
- *   2  update       : incremental update from a peer (apply to local Y.Doc)
- *   3  awareness    : cursor/selection/presence update
- *
- * Features:
- *   - Automatic reconnect with exponential back-off (max 30 s)
- *   - Token refresh: reads the latest access_token from localStorage on each
- *     reconnect attempt so a silently-refreshed token is always used
- *   - Awareness (remote cursors) synced in both directions
- */
 import * as Y from "yjs";
 import * as awarenessProtocol from "y-protocols/awareness";
 

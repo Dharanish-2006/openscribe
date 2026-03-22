@@ -11,41 +11,51 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
 
   const [status, setStatus] = useState("disconnected");
   const [peers, setPeers] = useState(0);
-
+  const [ydocReady, setYdocReady] = useState(null);
   useEffect(() => {
     if (!documentId || !enabled) return;
-
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const ydoc = new Y.Doc();
-    ydocRef.current = ydoc;
     const awareness = new Awareness(ydoc);
-    awarenessRef.current = awareness;
-    // Set local user 
-    const username = JSON.parse(localStorage.getItem("user") || "{}").username;
+
+    const username = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("user") || "{}").username;
+      } catch { return null; }
+    })();
     const color = randomColor(username || "anon");
-    awareness.setLocalStateField("user", { name: username || "Anonymous", color });
+    awareness.setLocalStateField("user", {
+      name: username || "Anonymous",
+      color,
+    });
+
     const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
+
     const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
       onStatusChange: setStatus,
       onPeersChange: setPeers,
     });
+
+    ydocRef.current = ydoc;
     providerRef.current = provider;
+    awarenessRef.current = awareness;
+    setYdocReady(ydoc);
 
     return () => {
       provider.destroy();
       ydoc.destroy();
-      providerRef.current = null;
       ydocRef.current = null;
+      providerRef.current = null;
       awarenessRef.current = null;
+      setYdocReady(null);
       setStatus("disconnected");
       setPeers(0);
     };
-  }, [documentId, enabled]);
+  }, [documentId]);
 
   return {
-    ydoc: ydocRef.current,
-    provider: providerRef.current,
+    ydoc: ydocReady,
     awareness: awarenessRef.current,
     status,
     peers,
@@ -57,6 +67,5 @@ function randomColor(seed) {
   for (let i = 0; i < seed.length; i++) {
     hash = seed.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h}, 70%, 60%)`;
+  return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`;
 }
