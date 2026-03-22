@@ -79,9 +79,10 @@ export default function Document() {
 
   const scheduleAutoSave = useCallback((html) => {
     console.log("[save] scheduleAutoSave called with html:", html?.substring(0, 60));
-    if (html && html !== "<p></p>") {
-      pendingContentRef.current = html;
-    }
+    // CRITICAL: if html is empty, ignore completely — do NOT reset timer or update pending
+    // Empty onUpdate fires come from Y.js awareness/sync events, not real user edits
+    if (!html || html === "<p></p>" || html.trim() === "") return;
+    pendingContentRef.current = html;
     clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(handleSave, 1500);
   }, [handleSave]);
