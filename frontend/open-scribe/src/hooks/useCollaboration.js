@@ -4,7 +4,6 @@ import { Awareness } from "y-protocols/awareness";
 import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
-
 const sessions = new Map();
 
 function getOrCreateSession(documentId) {
@@ -23,18 +22,12 @@ function getOrCreateSession(documentId) {
     name: username || "Anonymous",
     color: randomColor(username || "anon"),
   });
-  const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
-  const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
-    onStatusChange: () => {},
-    onPeersChange: () => {},
-  });
-  const session = {
-    ydoc, awareness, provider,
-    refCount: 1,
-    synced: false,
-    // needsSeed = true means: Y.Doc was empty after server sync, seed from DB
-    needsSeed: false,
-  };
+  const provider = new YjsWebSocketProvider(
+    `${WS_BASE}/ws/documents/${documentId}/`,
+    ydoc, awareness,
+    { onStatusChange: () => {}, onPeersChange: () => {} }
+  );
+  const session = { ydoc, awareness, provider, refCount: 1, synced: false, needsSeed: false };
   sessions.set(documentId, session);
   return session;
 }
@@ -57,7 +50,6 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
 
   const cbRef = useRef({ setStatus, setPeers, setSynced });
   cbRef.current = { setStatus, setPeers, setSynced };
-
   const initialContentRef = useRef("");
 
   useEffect(() => {
@@ -65,8 +57,6 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
     if (!localStorage.getItem("access_token")) return;
 
     const session = getOrCreateSession(documentId);
-
-    // Wire callbacks
     session.provider._onStatusChange = (s) => cbRef.current.setStatus(s);
     session.provider._onPeersChange = (p) => cbRef.current.setPeers(p);
 
@@ -80,32 +70,30 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
     const finishSync = () => {
       if (session.synced) return;
       session.synced = true;
-
-      // Check if Y.Doc is empty — if so, editor needs to seed from DB HTML
+      // Check AFTER any server data has been applied
+      // xmlFrag.length === 0 means server had no state → seed from DB
       const xmlFrag = session.ydoc.getXmlFragment("default");
       session.needsSeed = xmlFrag.length === 0;
-
       cbRef.current.setSynced(true);
     };
 
     const onYDocUpdate = () => {
-      // Server sent us data — Y.Doc has content, no seed needed
+      // Server sent an update — wait a tick so all updates in this batch apply
       clearTimeout(syncTimer);
       session.ydoc.off("update", onYDocUpdate);
-      finishSync();
+      // Use setTimeout(0) to let Y.js finish applying all updates before checking
+      setTimeout(finishSync, 0);
     };
 
-    const origOnStatusChange = session.provider._onStatusChange;
     session.provider._onStatusChange = (s) => {
       cbRef.current.setStatus(s);
       if (s === "connected" && !session.synced) {
-        // Listen for incoming Y.Doc update (server state)
         session.ydoc.on("update", onYDocUpdate);
-        // Give server 1.5s to respond, then proceed regardless
+        // After 2s with no server update, assume empty doc and seed from DB
         syncTimer = setTimeout(() => {
           session.ydoc.off("update", onYDocUpdate);
           finishSync();
-        }, 1500);
+        }, 2000);
       }
     };
 
@@ -117,14 +105,13 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
   }, [documentId, enabled]);
 
   const session = documentId ? sessions.get(documentId) : null;
-
   return {
     ydoc: synced ? (session?.ydoc ?? null) : null,
     awareness: session?.awareness ?? null,
     provider: session?.provider ?? null,
     status,
     peers,
-    needsSeed: synced && (session?.needsSeed === true),
+    needsSeed: synced && session?.needsSeed === true,
     initialContentRef,
   };
 }
