@@ -13,8 +13,10 @@ export default function Document() {
   const activeDocRef = useRef(null);
   const titleRef = useRef("");
   const debounceTimer = useRef(null);
-  const abortRef = useRef(null);
-  // Holds the latest captured HTML — updated every onUpdate, read by handleSave
+  // Sequence number — incremented on every save attempt
+  // Response is only applied if its seq matches the latest
+  const saveSeqRef = useRef(0);
+  // Latest captured HTML — set synchronously in onUpdate
   const pendingContentRef = useRef("");
 
   useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
@@ -30,6 +32,8 @@ export default function Document() {
       if (list.length > 0) {
         setActiveDoc(list[0]);
         setTitle(list[0].title);
+        // Prime pendingContent with DB content so first save is correct
+        pendingContentRef.current = list[0].content || "";
       }
     } catch (err) {
       console.error("Failed to load documents", err);
@@ -38,50 +42,41 @@ export default function Document() {
     }
   };
 
-  /**
-   * Save the content that was captured at schedule time.
-   * Cancels any in-flight request before sending.
-   */
   const handleSave = useCallback(async () => {
     const doc = activeDocRef.current;
     if (!doc) return;
 
-    // Read content captured at the time the last onUpdate fired
     const content = pendingContentRef.current || doc.content || "";
-
-    // Skip saving empty content — prevents wiping real data
     if (!content || content === "<p></p>") return;
 
-    // Cancel previous in-flight request
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
+    // Stamp this save with a sequence number
+    saveSeqRef.current += 1;
+    const mySeq = saveSeqRef.current;
 
     setSaving(true);
     try {
-      const { data } = await documentsAPI.update(
-        doc.id,
-        { title: titleRef.current, content },
-        { signal: abortRef.current.signal }
-      );
-      setDocs(prev => prev.map(d => d.id === data.id ? data : d));
-      setActiveDoc(data);
-      activeDocRef.current = data;
-      setSaved(true);
+      const { data } = await documentsAPI.update(doc.id, {
+        title: titleRef.current,
+        content,
+      });
+
+      // Only apply this response if no newer save has started
+      if (mySeq === saveSeqRef.current) {
+        setDocs(prev => prev.map(d => d.id === data.id ? data : d));
+        setActiveDoc(data);
+        activeDocRef.current = data;
+        setSaved(true);
+      }
     } catch (err) {
-      if (err.name === "CanceledError" || err.code === "ERR_CANCELED") return;
       console.error("Save failed", err);
     } finally {
-      setSaving(false);
+      if (mySeq === saveSeqRef.current) {
+        setSaving(false);
+      }
     }
   }, []);
 
-  /**
-   * Capture content NOW (at keystroke time) and schedule a debounced save.
-   * The debounce timer resets on every call — only the final pause triggers save.
-   * Content is captured immediately so it's never stale when handleSave runs.
-   */
   const scheduleAutoSave = useCallback((html) => {
-    // Capture the content at this exact moment
     if (html && html !== "<p></p>") {
       pendingContentRef.current = html;
     }
@@ -116,7 +111,7 @@ export default function Document() {
     if (!saved) await flushAndSave();
     setActiveDoc(doc);
     setTitle(doc.title);
-    pendingContentRef.current = "";
+    pendingContentRef.current = doc.content || "";
     setSaved(true);
   };
 
@@ -131,7 +126,7 @@ export default function Document() {
         const next = updated[0] || null;
         setActiveDoc(next);
         setTitle(next?.title || "");
-        pendingContentRef.current = "";
+        pendingContentRef.current = next?.content || "";
         setSaved(true);
       }
     } catch (err) {
@@ -168,10 +163,7 @@ export default function Document() {
             >
               <div className="doc-item-name">📄 {doc.title || "Untitled"}</div>
               <div className="doc-item-meta">{formatDate(doc.updated_at)}</div>
-              <button
-                className="doc-delete-btn"
-                onClick={e => handleDelete(doc.id, e)}
-              >✕</button>
+              <button className="doc-delete-btn" onClick={e => handleDelete(doc.id, e)}>✕</button>
             </div>
           ))}
         </div>
@@ -187,7 +179,6 @@ export default function Document() {
                 onChange={e => {
                   setTitle(e.target.value);
                   setSaved(false);
-                  // Title changes: use current pendingContent or last known content
                   scheduleAutoSave(pendingContentRef.current || activeDoc.content);
                 }}
                 placeholder="Document title..."
@@ -208,7 +199,6 @@ export default function Document() {
               documentId={activeDoc.id}
               initialContent={activeDoc.content || ""}
               onUpdate={({ editor }) => {
-                // Capture HTML immediately at keystroke time — never read later from ref
                 const html = editor.getHTML();
                 setSaved(false);
                 scheduleAutoSave(html);
