@@ -4,14 +4,18 @@ import { Awareness } from "y-protocols/awareness";
 import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
+
+// Module-level session store — one WebSocket per documentId, shared across renders
 const sessions = new Map();
 
 function getOrCreateSession(documentId, onStatusChange, onPeersChange) {
   if (sessions.has(documentId)) {
     const s = sessions.get(documentId);
     s.refCount++;
+    // Update callbacks to point to the latest React state setters
     s.onStatusChange = onStatusChange;
     s.onPeersChange = onPeersChange;
+    // Wire them into the provider
     s.provider._onStatusChange = onStatusChange;
     s.provider._onPeersChange = onPeersChange;
     return s;
@@ -24,12 +28,14 @@ function getOrCreateSession(documentId, onStatusChange, onPeersChange) {
     try { return JSON.parse(localStorage.getItem("user") || "{}").username; }
     catch { return null; }
   })();
+
   awareness.setLocalStateField("user", {
     name: username || "Anonymous",
     color: randomColor(username || "anon"),
   });
 
   const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
+
   const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
     onStatusChange,
     onPeersChange,
@@ -61,6 +67,8 @@ function releaseSession(documentId) {
 export function useCollaboration(documentId, { enabled = true } = {}) {
   const [status, setStatus] = useState("disconnected");
   const [peers, setPeers] = useState(0);
+
+  // Keep refs to the latest setters so we can update them without re-running the effect
   const setStatusRef = useRef(setStatus);
   const setPeersRef = useRef(setPeers);
   setStatusRef.current = setStatus;
@@ -69,12 +77,15 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
   useEffect(() => {
     if (!documentId || !enabled) return;
     if (!localStorage.getItem("access_token")) return;
+
+    // Use stable wrapper callbacks that always call the latest setter
     const onStatusChange = (s) => setStatusRef.current(s);
     const onPeersChange = (p) => setPeersRef.current(p);
 
     const session = getOrCreateSession(documentId, onStatusChange, onPeersChange);
 
     return () => {
+      // On cleanup, remove callbacks and release
       if (sessions.has(documentId)) {
         const s = sessions.get(documentId);
         s.provider._onStatusChange = () => {};
@@ -88,6 +99,7 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
 
   return {
     ydoc: session?.ydoc ?? null,
+    provider: session?.provider ?? null,
     awareness: session?.awareness ?? null,
     status,
     peers,

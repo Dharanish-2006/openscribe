@@ -5,6 +5,7 @@ const MSG_SYNC_STEP_1 = 0;
 const MSG_SYNC_STEP_2 = 1;
 const MSG_UPDATE = 2;
 const MSG_AWARENESS = 3;
+const MSG_HTML = 4;  // Custom: client sends current HTML after each update
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
@@ -40,9 +41,14 @@ export class YjsWebSocketProvider {
     this._connect();
   }
 
+  // Send current HTML to backend for DB persistence
+  sendHtml(html) {
+    const encoded = new TextEncoder().encode(html);
+    this._sendRaw(this._prependType(MSG_HTML, encoded));
+  }
+
   _connect() {
     if (this._destroyed) return;
-
     this._onStatusChange("connecting");
 
     const token = localStorage.getItem("access_token") || "";
@@ -50,11 +56,7 @@ export class YjsWebSocketProvider {
     const url = `${baseWithoutQuery}?token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(url);
-
-    // CRITICAL: set binaryType immediately after construction,
-    // before the socket has a chance to receive any message
     ws.binaryType = "arraybuffer";
-
     this._ws = ws;
 
     ws.onopen = () => {
@@ -65,16 +67,8 @@ export class YjsWebSocketProvider {
     };
 
     ws.onmessage = (event) => {
-      // Guard: ignore text frames entirely — we only speak binary
-      if (typeof event.data === "string") {
-        console.warn("[YjsWS] unexpected text frame, ignoring:", event.data.slice(0, 100));
-        return;
-      }
-      // Guard: must be ArrayBuffer
-      if (!(event.data instanceof ArrayBuffer)) {
-        console.warn("[YjsWS] unexpected data type:", typeof event.data);
-        return;
-      }
+      if (typeof event.data === "string") return;
+      if (!(event.data instanceof ArrayBuffer)) return;
       this._handleMessage(new Uint8Array(event.data));
     };
 
@@ -87,17 +81,12 @@ export class YjsWebSocketProvider {
       this._ws = null;
       this._onStatusChange("disconnected");
       this._onPeersChange(0);
-      if (!this._destroyed) {
-        this._scheduleReconnect();
-      }
+      if (!this._destroyed) this._scheduleReconnect();
     };
   }
 
   _scheduleReconnect() {
-    const delay = Math.min(
-      RECONNECT_BASE_MS * 2 ** this._reconnectAttempt,
-      RECONNECT_MAX_MS
-    );
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this._reconnectAttempt, RECONNECT_MAX_MS);
     this._reconnectAttempt += 1;
     this._reconnectTimer = setTimeout(() => this._connect(), delay);
   }
@@ -107,13 +96,7 @@ export class YjsWebSocketProvider {
     clearTimeout(this._reconnectTimer);
     this._ydoc.off("update", this._docUpdateHandler);
     this._awareness.off("update", this._awarenessUpdateHandler);
-
-    awarenessProtocol.removeAwarenessStates(
-      this._awareness,
-      [this._ydoc.clientID],
-      this
-    );
-
+    awarenessProtocol.removeAwarenessStates(this._awareness, [this._ydoc.clientID], this);
     if (this._ws) {
       this._ws.onclose = null;
       this._ws.close();
@@ -127,10 +110,7 @@ export class YjsWebSocketProvider {
   }
 
   _sendAwarenessState() {
-    const encoded = awarenessProtocol.encodeAwarenessUpdate(
-      this._awareness,
-      [this._ydoc.clientID]
-    );
+    const encoded = awarenessProtocol.encodeAwarenessUpdate(this._awareness, [this._ydoc.clientID]);
     this._sendRaw(this._prependType(MSG_AWARENESS, encoded));
   }
 
@@ -161,20 +141,15 @@ export class YjsWebSocketProvider {
         case MSG_SYNC_STEP_2:
           Y.applyUpdate(this._ydoc, payload, this);
           break;
-
         case MSG_UPDATE:
           Y.applyUpdate(this._ydoc, payload, this);
           break;
-
         case MSG_AWARENESS:
           awarenessProtocol.applyAwarenessUpdate(this._awareness, payload, this);
           const states = this._awareness.getStates();
-          const peerCount = [...states.keys()].filter(
-            (id) => id !== this._ydoc.clientID
-          ).length;
+          const peerCount = [...states.keys()].filter(id => id !== this._ydoc.clientID).length;
           this._onPeersChange(peerCount);
           break;
-
         default:
           console.warn("[YjsWS] unknown message type:", msgType);
       }

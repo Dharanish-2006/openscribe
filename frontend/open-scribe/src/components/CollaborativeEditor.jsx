@@ -145,31 +145,22 @@ export function CollaborativeEditor({
   const { height } = useWindowSize()
   const [mobileView, setMobileView] = useState("main")
   const toolbarRef = useRef(null)
-  const seededRef = useRef(false) // prevent double-seeding on re-renders
+  const seededRef = useRef(false)
 
-  const { ydoc, awareness, status, peers } = useCollaboration(documentId)
+  const { ydoc, awareness, status, peers, provider } = useCollaboration(documentId)
 
-  // Seed the Y.Doc with saved HTML when the server has no state (e.g. after restart)
   useEffect(() => {
     if (!ydoc || !initialContent || seededRef.current) return
 
-    // Check if Y.Doc already has content (server sent us state via sync-step-2)
-    // by looking at the XML fragment — if it has children, don't overwrite
     const xmlFragment = ydoc.getXmlFragment("default")
     if (xmlFragment.length > 0) {
       seededRef.current = true
       return
     }
 
-    // Y.Doc is empty — parse the saved HTML and insert it
-    // We do this by temporarily creating a hidden Tiptap editor to parse the HTML
-    // then copying the result into the Y.Doc via the Collaboration extension
     seededRef.current = true
-    // The editor below will be initialised with initialContent via the
-    // Collaboration.configure({ content }) path — handled in useEditor below
   }, [ydoc, initialContent])
 
-  // Reset seed flag when document changes
   useEffect(() => {
     seededRef.current = false
   }, [documentId])
@@ -214,9 +205,6 @@ export function CollaborativeEditor({
         ...(ydoc ? [
           Collaboration.configure({
             document: ydoc,
-            // Seed with saved HTML only if Y.Doc is empty (no peers have sent state)
-            // Tiptap's Collaboration extension accepts `content` as initial HTML
-            // but only applies it when the Y.Doc fragment is truly empty
             ...(initialContent ? { content: initialContent } : {}),
           }),
           CollaborationCursorV3.configure({ awareness }),
@@ -225,6 +213,8 @@ export function CollaborativeEditor({
       onUpdate: ({ editor }) => {
         if (externalRef) externalRef.current = editor
         onUpdate?.({ editor })
+        // Send HTML to backend for DB persistence (survives server restart)
+        if (provider) provider.sendHtml(editor.getHTML())
       },
     },
     [ydoc]
