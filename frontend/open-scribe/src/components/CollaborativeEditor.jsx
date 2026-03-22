@@ -1,6 +1,6 @@
 "use client"
 import Placeholder from "@tiptap/extension-placeholder"
-import { useEffect, useRef, useState, lazy, Suspense } from "react"
+import { useEffect, lazy, Suspense } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
 import { StarterKit } from "@tiptap/starter-kit"
@@ -22,6 +22,7 @@ import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 import "./CollaborationStatus.scss"
+import { useState } from "react"
 
 const SimpleEditorToolbar = lazy(() =>
   import("./SimpleEditorToolbar").then(m => ({ default: m.SimpleEditorToolbar }))
@@ -33,13 +34,11 @@ export function CollaborativeEditor({
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
-  const hasSeeded = useRef(false)
-  // Tracks whether user has typed since mount — if so, cancel pending seed
-  const userHasTyped = useRef(false)
 
-  const { ydoc, awareness, status, peers, needsSeed, initialContentRef } =
+  const { ydoc, awareness, status, peers, initialContentRef } =
     useCollaboration(documentId)
 
+  // Keep initialContentRef updated so the hook can read it during sync
   if (initialContentRef) initialContentRef.current = initialContent
 
   const editor = useEditor(
@@ -85,44 +84,11 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
-        // Mark that user has typed — prevents seeding from overwriting their input
-        userHasTyped.current = true
         onUpdate?.({ editor })
       },
     },
     [ydoc]
   )
-
-  // Seed editor with DB content when Y.Doc is empty after server sync.
-  // Only runs if user hasn't typed yet.
-  useEffect(() => {
-    if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
-    if (hasSeeded.current) return
-
-    const t = setTimeout(() => {
-      // Abort if user typed during the 150ms delay
-      if (userHasTyped.current) return
-
-      hasSeeded.current = true
-      try {
-        // Temporarily disconnect onUpdate so seeding doesn't trigger a save
-        // by calling setContent with emitUpdate=false
-        editor.commands.setContent(initialContent, false)
-        // Notify parent of the seeded content so pendingContentRef is correct
-        onUpdate?.({ editor })
-      } catch (e) {
-        console.warn("[collab] seed failed:", e)
-      }
-    }, 150)
-
-    return () => clearTimeout(t)
-  }, [editor, needsSeed, initialContent])
-
-  // Reset on document switch
-  useEffect(() => {
-    hasSeeded.current = false
-    userHasTyped.current = false
-  }, [documentId])
 
   useCursorSync(editor, awareness)
 

@@ -27,7 +27,13 @@ function getOrCreateSession(documentId) {
     ydoc, awareness,
     { onStatusChange: () => {}, onPeersChange: () => {} }
   );
-  const session = { ydoc, awareness, provider, refCount: 1, synced: false, needsSeed: false };
+  const session = {
+    ydoc, awareness, provider,
+    refCount: 1,
+    synced: false,
+    // null = not checked yet, true = empty after sync, false = has server content
+    isEmpty: null,
+  };
   sessions.set(documentId, session);
   return session;
 }
@@ -70,18 +76,30 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
     const finishSync = () => {
       if (session.synced) return;
       session.synced = true;
-      // Check AFTER any server data has been applied
-      // xmlFrag.length === 0 means server had no state → seed from DB
+
       const xmlFrag = session.ydoc.getXmlFragment("default");
-      session.needsSeed = xmlFrag.length === 0;
+      session.isEmpty = xmlFrag.length === 0;
+
+      // If server had no state AND we have saved HTML content,
+      // inject it into Y.Doc NOW before the editor mounts.
+      // We parse HTML to plain text and build minimal Y.js XML structure.
+      if (session.isEmpty && initialContentRef.current?.trim()) {
+        try {
+          injectHtmlIntoYDoc(session.ydoc, initialContentRef.current);
+          // After injection, mark as not empty so editor gets the content
+          session.isEmpty = false;
+        } catch (e) {
+          console.warn("[yjs] inject failed:", e);
+          session.isEmpty = true;
+        }
+      }
+
       cbRef.current.setSynced(true);
     };
 
     const onYDocUpdate = () => {
-      // Server sent an update — wait a tick so all updates in this batch apply
       clearTimeout(syncTimer);
       session.ydoc.off("update", onYDocUpdate);
-      // Use setTimeout(0) to let Y.js finish applying all updates before checking
       setTimeout(finishSync, 0);
     };
 
@@ -89,7 +107,6 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
       cbRef.current.setStatus(s);
       if (s === "connected" && !session.synced) {
         session.ydoc.on("update", onYDocUpdate);
-        // After 2s with no server update, assume empty doc and seed from DB
         syncTimer = setTimeout(() => {
           session.ydoc.off("update", onYDocUpdate);
           finishSync();
@@ -108,11 +125,99 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
   return {
     ydoc: synced ? (session?.ydoc ?? null) : null,
     awareness: session?.awareness ?? null,
+    provider: session?.provider ?? null,
     status,
     peers,
-    needsSeed: synced && session?.needsSeed === true,
     initialContentRef,
   };
+}
+
+/**
+ * Parse HTML string and inject into Y.Doc's "default" XmlFragment.
+ * Uses the browser DOM to parse, then builds Y.js XML nodes to match
+ * Tiptap's ProseMirror schema structure.
+ */
+function injectHtmlIntoYDoc(ydoc, html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const body = doc.body;
+  const frag = ydoc.getXmlFragment("default");
+
+  if (frag.length > 0) return; // safety check
+
+  ydoc.transact(() => {
+    const nodes = [];
+
+    for (const child of body.childNodes) {
+      const yNode = domNodeToYNode(ydoc, child);
+      if (yNode) nodes.push(yNode);
+    }
+
+    if (nodes.length === 0) {
+      // Fallback: single paragraph with text
+      const p = new Y.XmlElement("paragraph");
+      const text = new Y.XmlText();
+      const plain = body.textContent?.trim() || "";
+      if (plain) text.insert(0, plain);
+      nodes.push(p);
+      p.insert(0, [text]);
+    }
+
+    frag.insert(0, nodes);
+  });
+}
+
+function domNodeToYNode(ydoc, node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent;
+    if (!text) return null;
+    const yText = new Y.XmlText();
+    yText.insert(0, text);
+    return yText;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+  const tag = node.tagName.toLowerCase();
+
+  // Map HTML tags to Tiptap/ProseMirror node names
+  const tagMap = {
+    p: "paragraph",
+    h1: "heading", h2: "heading", h3: "heading", h4: "heading",
+    blockquote: "blockquote",
+    pre: "codeBlock",
+    ul: "bulletList", ol: "orderedList",
+    li: "listItem",
+    hr: "horizontalRule",
+  };
+
+  const nodeName = tagMap[tag] || "paragraph";
+  const yEl = new Y.XmlElement(nodeName);
+
+  // Add heading level attribute
+  if (tag.match(/^h[1-4]$/)) {
+    yEl.setAttribute("level", parseInt(tag[1]));
+  }
+
+  // Process children
+  const children = [];
+  for (const child of node.childNodes) {
+    const yChild = domNodeToYNode(ydoc, child);
+    if (yChild) children.push(yChild);
+  }
+
+  // For elements with only text, wrap in XmlText with marks
+  if (children.length === 0 && node.textContent) {
+    const yText = new Y.XmlText();
+    yText.insert(0, node.textContent);
+    children.push(yText);
+  }
+
+  if (children.length > 0) {
+    yEl.insert(0, children);
+  }
+
+  return yEl;
 }
 
 function cleanup(documentId, session) {
