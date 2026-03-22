@@ -49,7 +49,7 @@ import {
 } from "@/components/tiptap-ui/link-popover"
 import { MarkButton } from "@/components/tiptap-ui/mark-button"
 import { TextAlignButton } from "@/components/tiptap-ui/text-align-button"
-import { UndoRedoButton } from "@/components/tiptap-ui/undo-redo-button"
+
 
 import { ArrowLeftIcon } from "@/components/tiptap-icons/arrow-left-icon"
 import { HighlighterIcon } from "@/components/tiptap-icons/highlighter-icon"
@@ -70,14 +70,46 @@ import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 
 
+
+// Simple undo/redo buttons compatible with Y.js Collaboration
+// Avoids importing UndoRedoButton which causes circular dependency issues
+function CollabUndoButton({ action, editor }) {
+  const isUndo = action === "undo"
+  const label = isUndo ? "Undo" : "Redo"
+  const icon = isUndo ? "↩" : "↪"
+
+  const handleClick = () => {
+    if (!editor) return
+    if (isUndo) {
+      editor.chain().focus().undo().run()
+    } else {
+      editor.chain().focus().redo().run()
+    }
+  }
+
+  const isDisabled = !editor
+
+  return (
+    <Button
+      variant="ghost"
+      onClick={handleClick}
+      disabled={isDisabled}
+      title={label}
+      aria-label={label}
+    >
+      <span className="tiptap-button-icon" style={{ fontSize: "14px" }}>{icon}</span>
+    </Button>
+  )
+}
+
 // ─── Toolbar ────────────────────────────────────────────────────────────────
 
-const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus }) => (
+const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus, editor }) => (
   <>
     <Spacer />
     <ToolbarGroup>
-      <UndoRedoButton action="undo" />
-      <UndoRedoButton action="redo" />
+      <CollabUndoButton action="undo" editor={editor} />
+      <CollabUndoButton action="redo" editor={editor} />
     </ToolbarGroup>
     <ToolbarSeparator />
     <ToolbarGroup>
@@ -252,6 +284,7 @@ export function CollaborativeEditor({
               onHighlighterClick={() => setMobileView("highlighter")}
               onLinkClick={() => setMobileView("link")}
               isMobile={isMobile}
+              editor={editor}
               collabStatus={
                 <CollaborationStatus status={status} peers={peers} awareness={awareness} />
               }
