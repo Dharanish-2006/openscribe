@@ -47,6 +47,7 @@ export default function Document() {
     if (!doc) return;
 
     const content = pendingContentRef.current || doc.content || "";
+    console.log("[save] handleSave — pendingContent:", content?.substring(0, 60), "| doc.content:", doc.content?.substring(0, 40));
     if (!content || content === "<p></p>") return;
 
     // Stamp this save with a sequence number
@@ -77,6 +78,7 @@ export default function Document() {
   }, []);
 
   const scheduleAutoSave = useCallback((html) => {
+    console.log("[save] scheduleAutoSave called with html:", html?.substring(0, 60));
     if (html && html !== "<p></p>") {
       pendingContentRef.current = html;
     }

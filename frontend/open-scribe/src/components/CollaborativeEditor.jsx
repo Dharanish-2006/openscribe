@@ -1,6 +1,6 @@
 "use client"
 import Placeholder from "@tiptap/extension-placeholder"
-import { useEffect, lazy, Suspense } from "react"
+import { useEffect, useRef, useState, lazy, Suspense } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
 import { StarterKit } from "@tiptap/starter-kit"
@@ -22,7 +22,6 @@ import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 import "./CollaborationStatus.scss"
-import { useState } from "react"
 
 const SimpleEditorToolbar = lazy(() =>
   import("./SimpleEditorToolbar").then(m => ({ default: m.SimpleEditorToolbar }))
@@ -34,11 +33,11 @@ export function CollaborativeEditor({
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
+  const seededRef = useRef(false)
 
-  const { ydoc, awareness, status, peers, initialContentRef } =
+  const { ydoc, awareness, status, peers, initialContentRef, pendingHtml, clearPendingHtml } =
     useCollaboration(documentId)
 
-  // Keep initialContentRef updated so the hook can read it during sync
   if (initialContentRef) initialContentRef.current = initialContent
 
   const editor = useEditor(
@@ -84,11 +83,34 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
-        onUpdate?.({ editor })
+        const html = editor.getHTML();
+        console.log("[editor] onUpdate html:", html?.substring(0, 60));
+        onUpdate?.({ editor });
       },
     },
     [ydoc]
   )
+
+  // When editor mounts with an empty Y.Doc and we have saved content,
+  // use editor.commands.setContent — the ONLY reliable way to parse HTML into Y.Doc
+  useEffect(() => {
+    if (!editor || !pendingHtml || seededRef.current) return;
+
+    console.log("[editor] seeding with pendingHtml:", pendingHtml.substring(0, 60));
+    seededRef.current = true;
+
+    // setContent with emitUpdate:true so Y.Doc gets the data
+    // but we need to NOT trigger a save — onUpdate will fire but
+    // Document.jsx scheduleAutoSave with the correct content is fine
+    editor.commands.setContent(pendingHtml, true);
+    clearPendingHtml();
+    console.log("[editor] seed complete. editor.getHTML():", editor.getHTML()?.substring(0, 60));
+  }, [editor, pendingHtml]);
+
+  // Reset on doc switch
+  useEffect(() => {
+    seededRef.current = false;
+  }, [documentId]);
 
   useCursorSync(editor, awareness)
 

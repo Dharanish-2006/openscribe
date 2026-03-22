@@ -2,39 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
-import { prosemirrorJSONToYXmlFragment } from "@tiptap/y-tiptap";
-import { DOMParser as PMDOMParser } from "@tiptap/pm/model";
-import { getSchema } from "@tiptap/core";
-import { StarterKit } from "@tiptap/starter-kit";
-import { TextAlign } from "@tiptap/extension-text-align";
-import { Highlight } from "@tiptap/extension-highlight";
-import { Subscript } from "@tiptap/extension-subscript";
-import { Superscript } from "@tiptap/extension-superscript";
-import { TaskItem, TaskList } from "@tiptap/extension-list";
-import { Image } from "@tiptap/extension-image";
-import { Typography } from "@tiptap/extension-typography";
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
 const sessions = new Map();
-
-// Build the same ProseMirror schema the editor uses — needed to parse HTML correctly
-let _schema = null;
-function getEditorSchema() {
-  if (!_schema) {
-    _schema = getSchema([
-      StarterKit.configure({ history: false, undoRedo: false, horizontalRule: false }),
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      Highlight.configure({ multicolor: true }),
-      Subscript,
-      Superscript,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      Image,
-      Typography,
-    ]);
-  }
-  return _schema;
-}
 
 function getOrCreateSession(documentId) {
   if (sessions.has(documentId)) {
@@ -104,15 +74,17 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
       const xmlFrag = session.ydoc.getXmlFragment("default");
       const html = initialContentRef.current;
 
+      console.log("[collab] finishSync — xmlFrag.length:", xmlFrag.length, "| html:", html?.substring(0, 60));
+
+      // Y.Doc is empty AND we have saved content → seed it
       if (xmlFrag.length === 0 && html && html.trim() && html !== "<p></p>") {
         try {
-          const schema = getEditorSchema();
-          const dom = new DOMParser().parseFromString(html, "text/html");
-          const pmDoc = PMDOMParser.fromSchema(schema).parse(dom.body);
-          prosemirrorJSONToYXmlFragment(schema, pmDoc.toJSON(), xmlFrag);
-          console.log("[yjs] seeded Y.Doc from DB content, frag.length:", xmlFrag.length);
+          // Use a temporary editor instance to parse HTML into Y.Doc correctly
+          // This is the ONLY reliable way — let Tiptap parse its own HTML
+          session._pendingHtml = html;
+          console.log("[collab] marked pendingHtml for editor-based seeding");
         } catch (e) {
-          console.warn("[yjs] seed failed:", e.message);
+          console.warn("[collab] seed error:", e.message);
         }
       }
 
@@ -151,6 +123,9 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
     status,
     peers,
     initialContentRef,
+    // Expose pendingHtml so editor can seed itself correctly via setContent
+    pendingHtml: synced ? (session?._pendingHtml ?? null) : null,
+    clearPendingHtml: () => { if (session) session._pendingHtml = null; },
   };
 }
 
