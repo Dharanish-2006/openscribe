@@ -71,47 +71,12 @@ import { CollaborationStatus } from "./CollaborationStatus"
 
 
 
-// Simple undo/redo buttons compatible with Y.js Collaboration
-// Avoids importing UndoRedoButton which causes circular dependency issues
-function CollabUndoButton({ action, editor }) {
-  const isUndo = action === "undo"
-  const label = isUndo ? "Undo" : "Redo"
-  const icon = isUndo ? "↩" : "↪"
-
-  const handleClick = () => {
-    if (!editor) return
-    if (isUndo) {
-      editor.chain().focus().undo().run()
-    } else {
-      editor.chain().focus().redo().run()
-    }
-  }
-
-  const isDisabled = !editor
-
-  return (
-    <Button
-      variant="ghost"
-      onClick={handleClick}
-      disabled={isDisabled}
-      title={label}
-      aria-label={label}
-    >
-      <span className="tiptap-button-icon" style={{ fontSize: "14px" }}>{icon}</span>
-    </Button>
-  )
-}
-
 // ─── Toolbar ────────────────────────────────────────────────────────────────
 
-const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus, editor }) => (
+const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus }) => (
   <>
     <Spacer />
-    <ToolbarGroup>
-      <CollabUndoButton action="undo" editor={editor} />
-      <CollabUndoButton action="redo" editor={editor} />
-    </ToolbarGroup>
-    <ToolbarSeparator />
+
     <ToolbarGroup>
       <HeadingDropdownMenu levels={[1, 2, 3, 4]} portal={isMobile} />
       <ListDropdownMenu types={["bulletList", "orderedList", "taskList"]} portal={isMobile} />
@@ -284,7 +249,6 @@ export function CollaborativeEditor({
               onHighlighterClick={() => setMobileView("highlighter")}
               onLinkClick={() => setMobileView("link")}
               isMobile={isMobile}
-              editor={editor}
               collabStatus={
                 <CollaborationStatus status={status} peers={peers} awareness={awareness} />
               }
