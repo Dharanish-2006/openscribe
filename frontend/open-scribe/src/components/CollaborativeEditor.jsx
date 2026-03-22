@@ -35,6 +35,7 @@ export function CollaborativeEditor({
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
+  const seedingRef = useRef(false) // true while setContent is running
 
   const { ydoc, awareness, status, peers, provider, needsSeed, initialContentRef } =
     useCollaboration(documentId)
@@ -81,7 +82,7 @@ export function CollaborativeEditor({
         onUpdate?.({ editor })
         // Send HTML via WebSocket for DB persistence — skip empty content
         const html = editor.getHTML()
-        if (provider && html && html !== "<p></p>") {
+        if (provider && html && html !== "<p></p>" && !seedingRef.current) {
           provider.sendHtml(html)
         }
       },
@@ -93,11 +94,15 @@ export function CollaborativeEditor({
   // Uses editor.commands.setContent — the only reliable way to parse HTML into Y.Doc
   useEffect(() => {
     if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
+    seedingRef.current = true
     const t = setTimeout(() => {
       try {
         editor.commands.setContent(initialContent, false)
       } catch (e) {
         console.warn("[collab] seed setContent failed:", e)
+      } finally {
+        // Allow sendHtml after seeding completes
+        setTimeout(() => { seedingRef.current = false }, 500)
       }
     }, 100)
     return () => clearTimeout(t)
