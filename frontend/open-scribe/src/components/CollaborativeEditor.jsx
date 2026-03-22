@@ -33,15 +33,13 @@ export function CollaborativeEditor({
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
-  // Track whether we've already seeded this editor instance
   const hasSeeded = useRef(false)
-  // Track whether onUpdate should be suppressed (during seeding)
+  // When true, onUpdate is suppressed — prevents seeding from triggering a save
   const suppressUpdate = useRef(false)
 
   const { ydoc, awareness, status, peers, needsSeed, initialContentRef } =
     useCollaboration(documentId)
 
-  // Keep ref updated without causing re-renders or effect re-runs
   if (initialContentRef) initialContentRef.current = initialContent
 
   const editor = useEditor(
@@ -87,44 +85,37 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
+        // Skip saves triggered by seeding — they contain empty/partial content
+        if (suppressUpdate.current) return
         onUpdate?.({ editor })
       },
     },
     [ydoc]
   )
 
-  // Seed editor with DB content when Y.Doc is empty after server sync.
-  // Uses suppressUpdate to prevent the seeding from triggering a save.
+  // Seed editor with saved DB content when Y.Doc is empty after server sync
   useEffect(() => {
     if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
     if (hasSeeded.current) return
     hasSeeded.current = true
 
     const t = setTimeout(() => {
-      // Suppress all onUpdate events while setContent is running
       suppressUpdate.current = true
       try {
         editor.commands.setContent(initialContent, false)
-        // Update externalRef immediately with the seeded content
-        if (externalRef) externalRef.current = editor
       } catch (e) {
         console.warn("[collab] seed failed:", e)
       } finally {
-        // Re-enable onUpdate after a tick — long enough for Y.js
-        // to finish processing all internal updates from setContent
-        setTimeout(() => {
-          suppressUpdate.current = false
-        }, 300)
+        setTimeout(() => { suppressUpdate.current = false }, 300)
       }
     }, 150)
 
     return () => clearTimeout(t)
   }, [editor, needsSeed, initialContent])
 
-  // Reset seed flag when document changes (key prop handles this,
-  // but reset defensively in case of re-use)
   useEffect(() => {
     hasSeeded.current = false
+    suppressUpdate.current = false
   }, [documentId])
 
   useCursorSync(editor, awareness)
