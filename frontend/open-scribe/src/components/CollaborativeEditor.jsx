@@ -3,7 +3,6 @@ import Placeholder from "@tiptap/extension-placeholder"
 import { useEffect, useRef, useState, lazy, Suspense } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
-// Core Tiptap extensions only — NO tiptap-ui imports here (causes circular deps)
 import { StarterKit } from "@tiptap/starter-kit"
 import { Image } from "@tiptap/extension-image"
 import { TaskItem, TaskList } from "@tiptap/extension-list"
@@ -15,15 +14,12 @@ import { Superscript } from "@tiptap/extension-superscript"
 import { Selection } from "@tiptap/extensions"
 import Collaboration from "@tiptap/extension-collaboration"
 
-// Collaboration-specific imports
 import { CollaborationCursorV3 } from "../lib/CollaborationCursorV3"
 import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 import "./CollaborationStatus.scss"
 
-// Toolbar is lazy-loaded in its own chunk to break circular dependency
-// All tiptap-ui/* imports live in SimpleEditorToolbar, never in this file
 const SimpleEditorToolbar = lazy(() =>
   import("./SimpleEditorToolbar").then(m => ({ default: m.SimpleEditorToolbar }))
 )
@@ -35,12 +31,15 @@ export function CollaborativeEditor({
   initialContent = "",
 }) {
   const [mobileView, setMobileView] = useState("main")
-  const seedingRef = useRef(false) // true while setContent is running
+  // Track whether we've already seeded this editor instance
+  const hasSeeded = useRef(false)
+  // Track whether onUpdate should be suppressed (during seeding)
+  const suppressUpdate = useRef(false)
 
-  const { ydoc, awareness, status, peers, provider, needsSeed, initialContentRef } =
+  const { ydoc, awareness, status, peers, needsSeed, initialContentRef } =
     useCollaboration(documentId)
 
-  // Keep initialContent ref updated on every render (no effect needed, no dep issues)
+  // Keep ref updated without causing re-renders or effect re-runs
   if (initialContentRef) initialContentRef.current = initialContent
 
   const editor = useEditor(
@@ -78,37 +77,51 @@ export function CollaborativeEditor({
         ] : []),
       ],
       onUpdate: ({ editor }) => {
+        // Suppress onUpdate during seeding to prevent saving empty content
+        if (suppressUpdate.current) return
         if (externalRef) externalRef.current = editor
         onUpdate?.({ editor })
-        // Send HTML via WebSocket for DB persistence — skip empty content
-        const html = editor.getHTML()
-        if (provider && html && html !== "<p></p>" && !seedingRef.current) {
-          provider.sendHtml(html)
-        }
       },
     },
     [ydoc]
   )
 
-  // Seed editor with saved DB content when Y.Doc was empty after server sync
-  // Uses editor.commands.setContent — the only reliable way to parse HTML into Y.Doc
+  // Seed editor with DB content when Y.Doc is empty after server sync.
+  // Uses suppressUpdate to prevent the seeding from triggering a save.
   useEffect(() => {
     if (!editor || !needsSeed || !initialContent || !initialContent.trim()) return
-    seedingRef.current = true
+    if (hasSeeded.current) return
+    hasSeeded.current = true
+
     const t = setTimeout(() => {
+      // Suppress all onUpdate events while setContent is running
+      suppressUpdate.current = true
       try {
         editor.commands.setContent(initialContent, false)
+        // Update externalRef immediately with the seeded content
+        if (externalRef) externalRef.current = editor
       } catch (e) {
-        console.warn("[collab] seed setContent failed:", e)
+        console.warn("[collab] seed failed:", e)
       } finally {
-        // Allow sendHtml after seeding completes
-        setTimeout(() => { seedingRef.current = false }, 500)
+        // Re-enable onUpdate after a tick — long enough for Y.js
+        // to finish processing all internal updates from setContent
+        setTimeout(() => {
+          suppressUpdate.current = false
+        }, 300)
       }
-    }, 100)
+    }, 150)
+
     return () => clearTimeout(t)
   }, [editor, needsSeed, initialContent])
 
-  // Keep externalRef in sync
+  // Reset seed flag when document changes (key prop handles this,
+  // but reset defensively in case of re-use)
+  useEffect(() => {
+    hasSeeded.current = false
+    suppressUpdate.current = false
+  }, [documentId])
+
+  // Keep externalRef in sync when editor instance changes
   useEffect(() => {
     if (editor && externalRef) externalRef.current = editor
   }, [editor, externalRef])

@@ -108,7 +108,6 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
   return {
     ydoc: synced ? (session?.ydoc ?? null) : null,
     awareness: session?.awareness ?? null,
-    provider: session?.provider ?? null,
     status,
     peers,
     needsSeed: synced && session?.needsSeed === true,

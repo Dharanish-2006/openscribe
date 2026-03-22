@@ -5,7 +5,6 @@ const MSG_SYNC_STEP_1 = 0;
 const MSG_SYNC_STEP_2 = 1;
 const MSG_UPDATE = 2;
 const MSG_AWARENESS = 3;
-const MSG_HTML = 4;  // Custom: client sends current HTML after each update
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
@@ -17,7 +16,6 @@ export class YjsWebSocketProvider {
     this._awareness = awareness;
     this._onStatusChange = opts.onStatusChange || (() => {});
     this._onPeersChange = opts.onPeersChange || (() => {});
-
     this._ws = null;
     this._destroyed = false;
     this._reconnectAttempt = 0;
@@ -37,24 +35,14 @@ export class YjsWebSocketProvider {
 
     ydoc.on("update", this._docUpdateHandler);
     awareness.on("update", this._awarenessUpdateHandler);
-
     this._connect();
-  }
-
-  // Send current HTML to backend for DB persistence
-  sendHtml(html) {
-    const encoded = new TextEncoder().encode(html);
-    this._sendRaw(this._prependType(MSG_HTML, encoded));
   }
 
   _connect() {
     if (this._destroyed) return;
     this._onStatusChange("connecting");
-
     const token = localStorage.getItem("access_token") || "";
-    const baseWithoutQuery = this._wsUrlBase.split("?")[0];
-    const url = `${baseWithoutQuery}?token=${encodeURIComponent(token)}`;
-
+    const url = `${this._wsUrlBase.split("?")[0]}?token=${encodeURIComponent(token)}`;
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
     this._ws = ws;
@@ -87,7 +75,7 @@ export class YjsWebSocketProvider {
 
   _scheduleReconnect() {
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** this._reconnectAttempt, RECONNECT_MAX_MS);
-    this._reconnectAttempt += 1;
+    this._reconnectAttempt++;
     this._reconnectTimer = setTimeout(() => this._connect(), delay);
   }
 
@@ -135,7 +123,6 @@ export class YjsWebSocketProvider {
     if (!data || data.length === 0) return;
     const msgType = data[0];
     const payload = data.slice(1);
-
     try {
       switch (msgType) {
         case MSG_SYNC_STEP_2:
@@ -146,8 +133,8 @@ export class YjsWebSocketProvider {
           break;
         case MSG_AWARENESS:
           awarenessProtocol.applyAwarenessUpdate(this._awareness, payload, this);
-          const states = this._awareness.getStates();
-          const peerCount = [...states.keys()].filter(id => id !== this._ydoc.clientID).length;
+          const peerCount = [...this._awareness.getStates().keys()]
+            .filter(id => id !== this._ydoc.clientID).length;
           this._onPeersChange(peerCount);
           break;
         default:
