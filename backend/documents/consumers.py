@@ -53,9 +53,7 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
         self.room_group = f"doc_{self.document_id}"
         self.username = "?"
-        
         await self.accept()
-        
         try:
             await self.channel_layer.group_add(self.room_group, self.channel_name)
             existing_state = _store.get_state(self.document_id)
