@@ -13,6 +13,9 @@ import { Subscript } from "@tiptap/extension-subscript"
 import { Superscript } from "@tiptap/extension-superscript"
 import { Selection } from "@tiptap/extensions"
 import Collaboration from "@tiptap/extension-collaboration"
+import { ImageUploadNode } from "@/components/tiptap-node/image-upload-node/image-upload-node-extension"
+import { HorizontalRule } from "@/components/tiptap-node/horizontal-rule-node/horizontal-rule-node-extension"
+import { handleImageUpload, MAX_FILE_SIZE } from "@/lib/tiptap-utils"
 
 import { CollaborationCursorV3 } from "../lib/CollaborationCursorV3"
 import { useCursorSync } from "../hooks/useCursorSync"
@@ -71,6 +74,14 @@ export function CollaborativeEditor({
         Superscript,
         Subscript,
         Selection,
+        HorizontalRule,
+        ImageUploadNode.configure({
+          accept: "image/*",
+          maxSize: MAX_FILE_SIZE,
+          limit: 3,
+          upload: handleImageUpload,
+          onError: (error) => console.error("Upload failed:", error),
+        }),
         ...(ydoc ? [
           Collaboration.configure({ document: ydoc }),
           CollaborationCursorV3.configure({ awareness }),
