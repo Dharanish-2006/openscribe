@@ -2,60 +2,60 @@ import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
+
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
 
 export function useCollaboration(documentId, { enabled = true } = {}) {
   const ydocRef = useRef(null);
-  const providerRef = useRef(null);
   const awarenessRef = useRef(null);
+  const providerRef = useRef(null);
+  const initializedRef = useRef(null);
 
   const [status, setStatus] = useState("disconnected");
   const [peers, setPeers] = useState(0);
-  const [ydocReady, setYdocReady] = useState(null);
-  useEffect(() => {
-    if (!documentId || !enabled) return;
-    const token = localStorage.getItem("access_token");
-    if (!token) return;
+
+  if (documentId && enabled && initializedRef.current !== documentId) {
+    if (providerRef.current) {
+      providerRef.current.destroy();
+      ydocRef.current?.destroy();
+    }
+
     const ydoc = new Y.Doc();
     const awareness = new Awareness(ydoc);
 
     const username = (() => {
-      try {
-        return JSON.parse(localStorage.getItem("user") || "{}").username;
-      } catch { return null; }
+      try { return JSON.parse(localStorage.getItem("user") || "{}").username; }
+      catch { return null; }
     })();
-    const color = randomColor(username || "anon");
     awareness.setLocalStateField("user", {
       name: username || "Anonymous",
-      color,
+      color: randomColor(username || "anon"),
     });
 
+    const token = localStorage.getItem("access_token") || "";
     const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
 
-    const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
+    providerRef.current = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
       onStatusChange: setStatus,
       onPeersChange: setPeers,
     });
-
     ydocRef.current = ydoc;
-    providerRef.current = provider;
     awarenessRef.current = awareness;
-    setYdocReady(ydoc);
+    initializedRef.current = documentId;
+  }
 
+  useEffect(() => {
     return () => {
-      provider.destroy();
-      ydoc.destroy();
-      ydocRef.current = null;
+      providerRef.current?.destroy();
+      ydocRef.current?.destroy();
       providerRef.current = null;
+      ydocRef.current = null;
       awarenessRef.current = null;
-      setYdocReady(null);
-      setStatus("disconnected");
-      setPeers(0);
+      initializedRef.current = null;
     };
-  }, [documentId]);
-
+  }, []); 
   return {
-    ydoc: ydocReady,
+    ydoc: ydocRef.current,
     awareness: awarenessRef.current,
     status,
     peers,

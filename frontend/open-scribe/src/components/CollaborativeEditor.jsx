@@ -197,7 +197,7 @@ export function CollaborativeEditor({ documentId, onUpdate, editorRef: externalR
         onUpdate?.({ editor })
       },
     },
-    [ydoc]
+    [] // documentId via key prop handles re-init
   )
 
   useEffect(() => {
