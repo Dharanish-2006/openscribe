@@ -19,7 +19,7 @@ export default function Document() {
   useEffect(() => {
     if (saved || !activeDoc) return;
     clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => handleSave(), 2000);
+    autoSaveTimer.current = setTimeout(() => handleSave(), 500);
     return () => clearTimeout(autoSaveTimer.current);
   }, [saved, title]);
 
@@ -197,7 +197,12 @@ export default function Document() {
               documentId={activeDoc.id}
               initialContent={activeDoc.content || ""}
               editorRef={editorRef}
-              onUpdate={markUnsaved}
+              onUpdate={({ editor }) => {
+                editorRef.current = editor;
+                markUnsaved();
+                clearTimeout(autoSaveTimer.current);
+                autoSaveTimer.current = setTimeout(() => handleSave(), 500);
+              }}
             />
           </>
         ) : (
