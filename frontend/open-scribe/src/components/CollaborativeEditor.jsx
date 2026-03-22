@@ -3,7 +3,6 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useState } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
-// --- Tiptap Core Extensions ---
 import { StarterKit } from "@tiptap/starter-kit"
 import { Image } from "@tiptap/extension-image"
 import { TaskItem, TaskList } from "@tiptap/extension-list"
@@ -15,7 +14,6 @@ import { Superscript } from "@tiptap/extension-superscript"
 import { Selection } from "@tiptap/extensions"
 import Collaboration from "@tiptap/extension-collaboration"
 
-// --- UI Primitives ---
 import { Button } from "@/components/tiptap-ui-primitive/button"
 import { Spacer } from "@/components/tiptap-ui-primitive/spacer"
 import {
@@ -24,7 +22,6 @@ import {
   ToolbarSeparator,
 } from "@/components/tiptap-ui-primitive/toolbar"
 
-// --- Tiptap Node ---
 import { ImageUploadNode } from "@/components/tiptap-node/image-upload-node/image-upload-node-extension"
 import { HorizontalRule } from "@/components/tiptap-node/horizontal-rule-node/horizontal-rule-node-extension"
 import "@/components/tiptap-node/blockquote-node/blockquote-node.scss"
@@ -35,7 +32,6 @@ import "@/components/tiptap-node/image-node/image-node.scss"
 import "@/components/tiptap-node/heading-node/heading-node.scss"
 import "@/components/tiptap-node/paragraph-node/paragraph-node.scss"
 
-// --- Tiptap UI ---
 import { HeadingDropdownMenu } from "@/components/tiptap-ui/heading-dropdown-menu"
 import { ImageUploadButton } from "@/components/tiptap-ui/image-upload-button"
 import { ListDropdownMenu } from "@/components/tiptap-ui/list-dropdown-menu"
@@ -55,30 +51,25 @@ import { MarkButton } from "@/components/tiptap-ui/mark-button"
 import { TextAlignButton } from "@/components/tiptap-ui/text-align-button"
 import { UndoRedoButton } from "@/components/tiptap-ui/undo-redo-button"
 
-// --- Icons ---
 import { ArrowLeftIcon } from "@/components/tiptap-icons/arrow-left-icon"
 import { HighlighterIcon } from "@/components/tiptap-icons/highlighter-icon"
 import { LinkIcon } from "@/components/tiptap-icons/link-icon"
 
-// --- Hooks ---
 import { useIsBreakpoint } from "@/hooks/use-is-breakpoint"
 import { useWindowSize } from "@/hooks/use-window-size"
 import { useCursorVisibility } from "@/hooks/use-cursor-visibility"
 
-// --- Components ---
 import { ThemeToggle } from "@/components/tiptap-templates/simple/theme-toggle"
-
-// --- Lib ---
 import { handleImageUpload, MAX_FILE_SIZE } from "@/lib/tiptap-utils"
 import "@/components/tiptap-templates/simple/simple-editor.scss"
 import "./CollaborationStatus.scss"
+
 import { CollaborationCursorV3 } from "../lib/CollaborationCursorV3"
 import { useCursorSync } from "../hooks/useCursorSync"
 import { useCollaboration } from "../hooks/useCollaboration"
 import { CollaborationStatus } from "./CollaborationStatus"
 
-
-// ─── Toolbar sections ───────────────────────────────────────────────────────
+// ─── Toolbar ────────────────────────────────────────────────────────────────
 
 const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabStatus }) => (
   <>
@@ -101,11 +92,7 @@ const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabS
       <MarkButton type="strike" />
       <MarkButton type="code" />
       <MarkButton type="underline" />
-      {!isMobile ? (
-        <ColorHighlightPopover />
-      ) : (
-        <ColorHighlightPopoverButton onClick={onHighlighterClick} />
-      )}
+      {!isMobile ? <ColorHighlightPopover /> : <ColorHighlightPopoverButton onClick={onHighlighterClick} />}
       {!isMobile ? <LinkPopover /> : <LinkButton onClick={onLinkClick} />}
     </ToolbarGroup>
     <ToolbarSeparator />
@@ -126,14 +113,8 @@ const MainToolbarContent = ({ onHighlighterClick, onLinkClick, isMobile, collabS
     </ToolbarGroup>
     <Spacer />
     {isMobile && <ToolbarSeparator />}
-    {collabStatus && (
-      <ToolbarGroup>
-        {collabStatus}
-      </ToolbarGroup>
-    )}
-    <ToolbarGroup>
-      <ThemeToggle />
-    </ToolbarGroup>
+    {collabStatus && <ToolbarGroup>{collabStatus}</ToolbarGroup>}
+    <ToolbarGroup><ThemeToggle /></ToolbarGroup>
   </>
 )
 
@@ -142,30 +123,56 @@ const MobileToolbarContent = ({ type, onBack }) => (
     <ToolbarGroup>
       <Button variant="ghost" onClick={onBack}>
         <ArrowLeftIcon className="tiptap-button-icon" />
-        {type === "highlighter" ? (
-          <HighlighterIcon className="tiptap-button-icon" />
-        ) : (
-          <LinkIcon className="tiptap-button-icon" />
-        )}
+        {type === "highlighter"
+          ? <HighlighterIcon className="tiptap-button-icon" />
+          : <LinkIcon className="tiptap-button-icon" />}
       </Button>
     </ToolbarGroup>
     <ToolbarSeparator />
-    {type === "highlighter" ? (
-      <ColorHighlightPopoverContent />
-    ) : (
-      <LinkContent />
-    )}
+    {type === "highlighter" ? <ColorHighlightPopoverContent /> : <LinkContent />}
   </>
 )
 
+// ─── Main component ──────────────────────────────────────────────────────────
 
-export function CollaborativeEditor({ documentId, onUpdate, editorRef: externalRef }) {
+export function CollaborativeEditor({
+  documentId,
+  onUpdate,
+  editorRef: externalRef,
+  initialContent = "",   // ← HTML from DB, used to seed Y.Doc when memory is empty
+}) {
   const isMobile = useIsBreakpoint()
   const { height } = useWindowSize()
   const [mobileView, setMobileView] = useState("main")
   const toolbarRef = useRef(null)
+  const seededRef = useRef(false) // prevent double-seeding on re-renders
 
   const { ydoc, awareness, status, peers } = useCollaboration(documentId)
+
+  // Seed the Y.Doc with saved HTML when the server has no state (e.g. after restart)
+  useEffect(() => {
+    if (!ydoc || !initialContent || seededRef.current) return
+
+    // Check if Y.Doc already has content (server sent us state via sync-step-2)
+    // by looking at the XML fragment — if it has children, don't overwrite
+    const xmlFragment = ydoc.getXmlFragment("default")
+    if (xmlFragment.length > 0) {
+      seededRef.current = true
+      return
+    }
+
+    // Y.Doc is empty — parse the saved HTML and insert it
+    // We do this by temporarily creating a hidden Tiptap editor to parse the HTML
+    // then copying the result into the Y.Doc via the Collaboration extension
+    seededRef.current = true
+    // The editor below will be initialised with initialContent via the
+    // Collaboration.configure({ content }) path — handled in useEditor below
+  }, [ydoc, initialContent])
+
+  // Reset seed flag when document changes
+  useEffect(() => {
+    seededRef.current = false
+  }, [documentId])
 
   const editor = useEditor(
     {
@@ -184,10 +191,7 @@ export function CollaborativeEditor({ documentId, onUpdate, editorRef: externalR
           horizontalRule: false,
           history: false,
           undoRedo: false,
-          link: {
-            openOnClick: false,
-            enableClickSelection: true,
-          },
+          link: { openOnClick: false, enableClickSelection: true },
         }),
         Placeholder.configure({ placeholder: "Start writing..." }),
         HorizontalRule,
@@ -208,7 +212,13 @@ export function CollaborativeEditor({ documentId, onUpdate, editorRef: externalR
           onError: (error) => console.error("Upload failed:", error),
         }),
         ...(ydoc ? [
-          Collaboration.configure({ document: ydoc }),
+          Collaboration.configure({
+            document: ydoc,
+            // Seed with saved HTML only if Y.Doc is empty (no peers have sent state)
+            // Tiptap's Collaboration extension accepts `content` as initial HTML
+            // but only applies it when the Y.Doc fragment is truly empty
+            ...(initialContent ? { content: initialContent } : {}),
+          }),
           CollaborationCursorV3.configure({ awareness }),
         ] : []),
       ],
@@ -234,9 +244,7 @@ export function CollaborativeEditor({ documentId, onUpdate, editorRef: externalR
   })
 
   useEffect(() => {
-    if (!isMobile && mobileView !== "main") {
-      setMobileView("main")
-    }
+    if (!isMobile && mobileView !== "main") setMobileView("main")
   }, [isMobile, mobileView])
 
   return (

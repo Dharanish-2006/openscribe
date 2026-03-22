@@ -45,7 +45,10 @@ export default function Document() {
     const content = editorRef.current?.getHTML?.() ?? activeDoc.content ?? "";
     setSaving(true);
     try {
-      const { data } = await documentsAPI.update(activeDoc.id, { title, content });
+      const { data } = await documentsAPI.update(activeDoc.id, {
+        title,
+        content,
+      });
       setDocs((prev) => prev.map((d) => (d.id === data.id ? data : d)));
       setActiveDoc(data);
       setSaved(true);
@@ -59,7 +62,10 @@ export default function Document() {
   const handleNew = async () => {
     if (!saved && activeDoc) await handleSave();
     try {
-      const { data } = await documentsAPI.create({ title: "Untitled", content: "" });
+      const { data } = await documentsAPI.create({
+        title: "Untitled",
+        content: "",
+      });
       setDocs((prev) => [data, ...prev]);
       setActiveDoc(data);
       setTitle(data.title);
@@ -100,8 +106,10 @@ export default function Document() {
   const formatDate = (iso) => {
     if (!iso) return "";
     return new Date(iso).toLocaleDateString("en-US", {
-      month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -118,11 +126,21 @@ export default function Document() {
       <aside className="doc-sidebar">
         <div className="doc-sidebar-header">
           <span className="doc-sidebar-title">Documents</span>
-          <button className="new-doc-btn" onClick={handleNew} title="New Document">＋</button>
+          <button
+            className="new-doc-btn"
+            onClick={handleNew}
+            title="New Document"
+          >
+            ＋
+          </button>
         </div>
         <div className="doc-list">
           {docs.length === 0 && (
-            <div className="doc-empty">No documents yet.<br />Click ＋ to start.</div>
+            <div className="doc-empty">
+              No documents yet.
+              <br />
+              Click ＋ to start.
+            </div>
           )}
           {docs.map((doc) => (
             <div
@@ -136,7 +154,9 @@ export default function Document() {
                 className="doc-delete-btn"
                 onClick={(e) => handleDelete(doc.id, e)}
                 title="Delete"
-              >✕</button>
+              >
+                ✕
+              </button>
             </div>
           ))}
         </div>
@@ -149,21 +169,33 @@ export default function Document() {
               <input
                 className="doc-title-input"
                 value={title}
-                onChange={(e) => { setTitle(e.target.value); markUnsaved(); }}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  markUnsaved();
+                }}
                 placeholder="Document title..."
               />
               <div className="doc-actions">
                 <span className={`save-status ${saved ? "saved" : "unsaved"}`}>
                   {saving ? "Saving..." : saved ? "✓ Saved" : "● Unsaved"}
                 </span>
-                <button className="btn-save" onClick={handleSave} disabled={saving}>Save</button>
-                <button className="btn-new" onClick={handleNew}>＋ New</button>
+                <button
+                  className="btn-save"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  Save
+                </button>
+                <button className="btn-new" onClick={handleNew}>
+                  ＋ New
+                </button>
               </div>
             </div>
 
             <CollaborativeEditor
               key={activeDoc.id}
               documentId={activeDoc.id}
+              initialContent={activeDoc.content || ""}
               editorRef={editorRef}
               onUpdate={markUnsaved}
             />
