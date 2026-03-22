@@ -86,6 +86,7 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
                     await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, state))
             elif msg_type == MSG_UPDATE:
                 _store.apply_update(self.document_id, payload)
+                await self._save_html_to_db()
                 await self.channel_layer.group_send(self.room_group, {
                     "type": "yjs.update",
                     "sender": self.channel_name,
