@@ -52,21 +52,19 @@ class YjsDocumentConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
         self.room_group = f"doc_{self.document_id}"
-        self.username = "user"
-
+        self.username = "?"
+        
         await self.accept()
-
+        
         try:
             await self.channel_layer.group_add(self.room_group, self.channel_name)
-            
             existing_state = _store.get_state(self.document_id)
             if existing_state:
                 await self.send(bytes_data=_msg(MSG_SYNC_STEP_2, existing_state))
-
-            logger.info("[yjs] connect doc=%s", self.document_id)
-
+            print(f"[yjs] CONNECTED doc={self.document_id}", flush=True)
         except Exception as exc:
-            logger.exception("[yjs] connect error: %s", exc)
+            import traceback
+            print(f"[yjs] CONNECT ERROR: {traceback.format_exc()}", flush=True)
             await self.close(code=1011)
 
     async def disconnect(self, close_code):
