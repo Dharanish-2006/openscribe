@@ -32,7 +32,6 @@ export default function Document() {
       if (list.length > 0) {
         setActiveDoc(list[0]);
         setTitle(list[0].title);
-        // Prime pendingContent with DB content so first save is correct
         pendingContentRef.current = list[0].content || "";
       }
     } catch (err) {
@@ -114,7 +113,7 @@ export default function Document() {
     if (!saved) await flushAndSave();
     setActiveDoc(doc);
     setTitle(doc.title);
-    pendingContentRef.current = doc.content || "";
+    pendingContentRef.current = doc.content || "";  // prime with DB content
     setSaved(true);
   };
 

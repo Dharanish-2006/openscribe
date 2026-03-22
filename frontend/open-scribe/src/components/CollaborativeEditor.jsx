@@ -34,6 +34,7 @@ export function CollaborativeEditor({
 }) {
   const [mobileView, setMobileView] = useState("main")
   const seededRef = useRef(false)
+  const readyRef = useRef(false) // true only after first real user edit
 
   const { ydoc, awareness, status, peers, initialContentRef, pendingHtml, clearPendingHtml } =
     useCollaboration(documentId)
@@ -85,7 +86,21 @@ export function CollaborativeEditor({
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         console.log("[editor] onUpdate html:", html?.substring(0, 60));
+        // Only propagate updates after user has made an intentional edit
+        // The first onUpdate after mount comes from Y.js sync, not user input
+        if (!readyRef.current) return;
         onUpdate?.({ editor });
+      },
+      onTransaction: ({ transaction }) => {
+        // Mark editor as ready only after the first user-initiated transaction
+        // (transactions with steps = actual content changes by the user)
+        if (!readyRef.current && transaction.docChanged && transaction.steps.length > 0) {
+          // Check it's not from Y.js sync (those have a 'y-sync$' meta)
+          const isYjsUpdate = transaction.getMeta('y-sync$') !== undefined;
+          if (!isYjsUpdate) {
+            readyRef.current = true;
+          }
+        }
       },
     },
     [ydoc]
@@ -110,6 +125,7 @@ export function CollaborativeEditor({
   // Reset on doc switch
   useEffect(() => {
     seededRef.current = false;
+    readyRef.current = false;
   }, [documentId]);
 
   useCursorSync(editor, awareness)
