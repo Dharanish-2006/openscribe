@@ -17,16 +17,3 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "openscribe.settings")
 
 django_asgi_app = get_asgi_application()
 
-application = ProtocolTypeRouter(
-    {
-        # Standard HTTP — handled by Django as normal
-        "http": django_asgi_app,
-
-        # WebSocket — wrapped in origin validation + auth middleware
-        "websocket": AllowedHostsOriginValidator(
-            AuthMiddlewareStack(
-                URLRouter(websocket_urlpatterns)
-            )
-        ),
-    }
-)
