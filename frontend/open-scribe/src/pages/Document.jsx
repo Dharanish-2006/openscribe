@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { documentsAPI } from "../api/documents";
 import { CollaborativeEditor } from "@/components/CollaborativeEditor";
 
@@ -11,17 +11,15 @@ export default function Document() {
   const [saving, setSaving] = useState(false);
   const editorRef = useRef(null);
   const autoSaveTimer = useRef(null);
+  const activeDocRef = useRef(null);
+  const titleRef = useRef("");
+
+  useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
+  useEffect(() => { titleRef.current = title; }, [title]);
 
   useEffect(() => {
     fetchDocs();
   }, []);
-
-  useEffect(() => {
-    if (saved || !activeDoc) return;
-    clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => handleSave(), 500);
-    return () => clearTimeout(autoSaveTimer.current);
-  }, [saved, title]);
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -40,32 +38,38 @@ export default function Document() {
     }
   };
 
-  const handleSave = async () => {
-    if (!activeDoc) return;
-    const content = editorRef.current?.getHTML?.() ?? activeDoc.content ?? "";
+  const handleSave = useCallback(async () => {
+    const doc = activeDocRef.current;
+    if (!doc) return;
+
+    const content = editorRef.current?.getHTML?.() ?? doc.content ?? "";
     setSaving(true);
     try {
-      const { data } = await documentsAPI.update(activeDoc.id, {
-        title,
+      const { data } = await documentsAPI.update(doc.id, {
+        title: titleRef.current,
         content,
       });
       setDocs((prev) => prev.map((d) => (d.id === data.id ? data : d)));
       setActiveDoc(data);
+      activeDocRef.current = data;
       setSaved(true);
     } catch (err) {
       console.error("Save failed", err);
     } finally {
       setSaving(false);
     }
-  };
+  }, []);
+
+  const scheduleAutoSave = useCallback(() => {
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(handleSave, 1000);
+  }, [handleSave]);
 
   const handleNew = async () => {
-    if (!saved && activeDoc) await handleSave();
+    clearTimeout(autoSaveTimer.current);
+    if (!saved) await handleSave();
     try {
-      const { data } = await documentsAPI.create({
-        title: "Untitled",
-        content: "",
-      });
+      const { data } = await documentsAPI.create({ title: "Untitled", content: "" });
       setDocs((prev) => [data, ...prev]);
       setActiveDoc(data);
       setTitle(data.title);
@@ -76,8 +80,9 @@ export default function Document() {
   };
 
   const handleSwitch = async (doc) => {
-    if (doc.id === activeDoc?.id) return;
-    if (!saved && activeDoc) await handleSave();
+    if (doc.id === activeDocRef.current?.id) return;
+    clearTimeout(autoSaveTimer.current);
+    if (!saved) await handleSave();
     setActiveDoc(doc);
     setTitle(doc.title);
     setSaved(true);
@@ -90,7 +95,7 @@ export default function Document() {
       await documentsAPI.delete(id);
       const updated = docs.filter((d) => d.id !== id);
       setDocs(updated);
-      if (activeDoc?.id === id) {
+      if (activeDocRef.current?.id === id) {
         const next = updated[0] || null;
         setActiveDoc(next);
         setTitle(next?.title || "");
@@ -101,24 +106,16 @@ export default function Document() {
     }
   };
 
-  const markUnsaved = () => setSaved(false);
-
   const formatDate = (iso) => {
     if (!iso) return "";
     return new Date(iso).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+      month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit",
     });
   };
 
   if (loading) {
-    return (
-      <div className="doc-loading">
-        <span className="spinner" />
-      </div>
-    );
+    return <div className="doc-loading"><span className="spinner" /></div>;
   }
 
   return (
@@ -126,21 +123,11 @@ export default function Document() {
       <aside className="doc-sidebar">
         <div className="doc-sidebar-header">
           <span className="doc-sidebar-title">Documents</span>
-          <button
-            className="new-doc-btn"
-            onClick={handleNew}
-            title="New Document"
-          >
-            ＋
-          </button>
+          <button className="new-doc-btn" onClick={handleNew} title="New Document">＋</button>
         </div>
         <div className="doc-list">
           {docs.length === 0 && (
-            <div className="doc-empty">
-              No documents yet.
-              <br />
-              Click ＋ to start.
-            </div>
+            <div className="doc-empty">No documents yet.<br />Click ＋ to start.</div>
           )}
           {docs.map((doc) => (
             <div
@@ -154,9 +141,7 @@ export default function Document() {
                 className="doc-delete-btn"
                 onClick={(e) => handleDelete(doc.id, e)}
                 title="Delete"
-              >
-                ✕
-              </button>
+              >✕</button>
             </div>
           ))}
         </div>
@@ -171,7 +156,8 @@ export default function Document() {
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
-                  markUnsaved();
+                  setSaved(false);
+                  scheduleAutoSave();
                 }}
                 placeholder="Document title..."
               />
@@ -179,16 +165,8 @@ export default function Document() {
                 <span className={`save-status ${saved ? "saved" : "unsaved"}`}>
                   {saving ? "Saving..." : saved ? "✓ Saved" : "● Unsaved"}
                 </span>
-                <button
-                  className="btn-save"
-                  onClick={handleSave}
-                  disabled={saving}
-                >
-                  Save
-                </button>
-                <button className="btn-new" onClick={handleNew}>
-                  ＋ New
-                </button>
+                <button className="btn-save" onClick={handleSave} disabled={saving}>Save</button>
+                <button className="btn-new" onClick={handleNew}>＋ New</button>
               </div>
             </div>
 
@@ -199,9 +177,8 @@ export default function Document() {
               editorRef={editorRef}
               onUpdate={({ editor }) => {
                 editorRef.current = editor;
-                markUnsaved();
-                clearTimeout(autoSaveTimer.current);
-                autoSaveTimer.current = setTimeout(() => handleSave(), 500);
+                setSaved(false);
+                scheduleAutoSave();
               }}
             />
           </>

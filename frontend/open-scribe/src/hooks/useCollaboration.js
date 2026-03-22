@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
@@ -6,10 +6,14 @@ import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
 const sessions = new Map();
 
-function getOrCreateSession(documentId) {
+function getOrCreateSession(documentId, onStatusChange, onPeersChange) {
   if (sessions.has(documentId)) {
     const s = sessions.get(documentId);
     s.refCount++;
+    s.onStatusChange = onStatusChange;
+    s.onPeersChange = onPeersChange;
+    s.provider._onStatusChange = onStatusChange;
+    s.provider._onPeersChange = onPeersChange;
     return s;
   }
 
@@ -27,9 +31,18 @@ function getOrCreateSession(documentId) {
 
   const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
   const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
+    onStatusChange,
+    onPeersChange,
   });
 
-  const session = { ydoc, awareness, provider, refCount: 1, listeners: new Set() };
+  const session = {
+    ydoc,
+    awareness,
+    provider,
+    refCount: 1,
+    onStatusChange,
+    onPeersChange,
+  };
   sessions.set(documentId, session);
   return session;
 }
@@ -48,25 +61,25 @@ function releaseSession(documentId) {
 export function useCollaboration(documentId, { enabled = true } = {}) {
   const [status, setStatus] = useState("disconnected");
   const [peers, setPeers] = useState(0);
+  const setStatusRef = useRef(setStatus);
+  const setPeersRef = useRef(setPeers);
+  setStatusRef.current = setStatus;
+  setPeersRef.current = setPeers;
 
   useEffect(() => {
     if (!documentId || !enabled) return;
     if (!localStorage.getItem("access_token")) return;
-    const session = getOrCreateSession(documentId);
-    const origStatusChange = session.provider._onStatusChange;
-    const origPeersChange = session.provider._onPeersChange;
-    session.provider._onStatusChange = (s) => {
-      origStatusChange(s);
-      setStatus(s);
-    };
-    session.provider._onPeersChange = (p) => {
-      origPeersChange(p);
-      setPeers(p);
-    };
+    const onStatusChange = (s) => setStatusRef.current(s);
+    const onPeersChange = (p) => setPeersRef.current(p);
+
+    const session = getOrCreateSession(documentId, onStatusChange, onPeersChange);
 
     return () => {
-      session.provider._onStatusChange = () => {};
-      session.provider._onPeersChange = () => {};
+      if (sessions.has(documentId)) {
+        const s = sessions.get(documentId);
+        s.provider._onStatusChange = () => {};
+        s.provider._onPeersChange = () => {};
+      }
       releaseSession(documentId);
     };
   }, [documentId, enabled]);
