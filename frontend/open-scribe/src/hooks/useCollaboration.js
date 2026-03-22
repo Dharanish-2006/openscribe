@@ -5,14 +5,13 @@ import { YjsWebSocketProvider } from "../lib/YjsWebSocketProvider";
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
 
+// Module-level map — one session per documentId, never recreated on re-render
 const sessions = new Map();
 
-function getOrCreateSession(documentId, onStatusChange, onPeersChange) {
+function getOrCreateSession(documentId) {
   if (sessions.has(documentId)) {
     const s = sessions.get(documentId);
     s.refCount++;
-    s.provider._onStatusChange = onStatusChange;
-    s.provider._onPeersChange = onPeersChange;
     return s;
   }
 
@@ -30,12 +29,21 @@ function getOrCreateSession(documentId, onStatusChange, onPeersChange) {
   });
 
   const wsUrl = `${WS_BASE}/ws/documents/${documentId}/`;
+
+  // Create provider with no-op callbacks — wired in useCollaboration
   const provider = new YjsWebSocketProvider(wsUrl, ydoc, awareness, {
-    onStatusChange,
-    onPeersChange,
+    onStatusChange: () => {},
+    onPeersChange: () => {},
   });
 
-  const session = { ydoc, awareness, provider, refCount: 1, synced: false };
+  const session = {
+    ydoc,
+    awareness,
+    provider,
+    refCount: 1,
+    synced: false,      // true once we've resolved initial state
+    seedDone: false,    // true once seeding from DB has been attempted
+  };
   sessions.set(documentId, session);
   return session;
 }
@@ -51,122 +59,122 @@ function releaseSession(documentId) {
   }
 }
 
-export function useCollaboration(documentId, { enabled = true, initialContent = "" } = {}) {
+export function useCollaboration(documentId, { enabled = true } = {}) {
   const [status, setStatus] = useState("disconnected");
   const [peers, setPeers] = useState(0);
-  // synced = true means Y.Doc is ready for the editor to mount
   const [synced, setSynced] = useState(false);
 
-  const setStatusRef = useRef(setStatus);
-  const setPeersRef = useRef(setPeers);
-  setStatusRef.current = setStatus;
-  setPeersRef.current = setPeers;
+  // Stable ref — always points to latest setter without causing effect re-runs
+  const cbRef = useRef({ setStatus, setPeers, setSynced });
+  cbRef.current = { setStatus, setPeers, setSynced };
+
+  // initialContentRef lets us read initialContent inside the effect
+  // without it being a dependency (avoids reconnect loop)
+  const initialContentRef = useRef("");
 
   useEffect(() => {
     if (!documentId || !enabled) return;
     if (!localStorage.getItem("access_token")) return;
 
-    const onStatusChange = (s) => setStatusRef.current(s);
-    const onPeersChange = (p) => setPeersRef.current(p);
+    const session = getOrCreateSession(documentId);
 
-    const session = getOrCreateSession(documentId, onStatusChange, onPeersChange);
+    // Wire status/peers callbacks into the provider
+    session.provider._onStatusChange = (s) => cbRef.current.setStatus(s);
+    session.provider._onPeersChange = (p) => cbRef.current.setPeers(p);
 
-    // If already synced (e.g. switching back to same doc), use existing state
+    // If already synced from a previous mount, just restore state
     if (session.synced) {
       setSynced(true);
-      return () => {
-        if (sessions.has(documentId)) {
-          const s = sessions.get(documentId);
-          s.provider._onStatusChange = () => {};
-          s.provider._onPeersChange = () => {};
-        }
-        releaseSession(documentId);
-      };
+      return () => cleanup(documentId, session);
     }
 
-    // Wait for either:
-    // 1. Server sends MSG_SYNC_STEP_2 (has existing state) — onSynced fires
-    // 2. Connection opens but server has no state — we seed with initialContent
-    const onSynced = () => {
-      session.synced = true;
-
-      // Check if Y.Doc is still empty after server sync
-      // If so, seed with HTML from DB
-      const xmlFragment = session.ydoc.getXmlFragment("default");
-      if (xmlFragment.length === 0 && initialContent) {
-        // Use Y.js transaction to insert initial content as a text node
-        // This is the only reliable way to seed an empty Y.Doc
-        session.ydoc.transact(() => {
-          // Parse HTML into ProseMirror-compatible Y.js XML
-          // We insert a raw text node that Tiptap will parse
-          const fragment = session.ydoc.getXmlFragment("default");
-          // Build a minimal paragraph with the content
-          // Tiptap's Collaboration extension reads from "default" fragment
-          const paragraph = new Y.XmlElement("paragraph");
-          const text = new Y.XmlText();
-          // Strip HTML tags for plain text fallback
-          const plainText = initialContent.replace(/<[^>]+>/g, "");
-          if (plainText.trim()) {
-            text.insert(0, plainText);
-            paragraph.insert(0, [text]);
-            fragment.insert(0, [paragraph]);
-          }
-        });
-      }
-
-      setSynced(true);
-    };
-
-    // Hook into the provider's onStatusChange to detect first "connected" event
-    // and use a one-time Y.Doc observer to detect when sync-step-2 is applied
     let syncTimer = null;
 
-    // Observer fires when Y.Doc receives any update (including sync-step-2)
+    const doSync = () => {
+      if (session.synced) return;
+      session.synced = true;
+
+      // Only seed if Y.Doc is empty AND we haven't seeded yet AND we have content
+      if (!session.seedDone) {
+        session.seedDone = true;
+        const xmlFragment = session.ydoc.getXmlFragment("default");
+        const initialContent = initialContentRef.current;
+
+        if (xmlFragment.length === 0 && initialContent && initialContent.trim()) {
+          // Seed Y.Doc with saved HTML via Y.js transaction
+          // We store as XML text — Tiptap Collaboration reads "default" fragment
+          try {
+            session.ydoc.transact(() => {
+              const frag = session.ydoc.getXmlFragment("default");
+              const paragraph = new Y.XmlElement("paragraph");
+              // Strip HTML tags to plain text for safety
+              const div = document.createElement("div");
+              div.innerHTML = initialContent;
+              const text = new Y.XmlText(div.textContent || "");
+              paragraph.insert(0, [text]);
+              frag.insert(0, [paragraph]);
+            });
+          } catch (e) {
+            console.warn("[yjs] seed failed:", e);
+          }
+        }
+      }
+
+      cbRef.current.setSynced(true);
+    };
+
+    // Listen for Y.Doc update = server sent sync-step-2 with content
     const onYDocUpdate = () => {
       clearTimeout(syncTimer);
       session.ydoc.off("update", onYDocUpdate);
-      onSynced();
+      doSync();
     };
 
+    // When connected, give server 1s to send state, then proceed either way
     const origStatusChange = session.provider._onStatusChange;
     session.provider._onStatusChange = (s) => {
-      origStatusChange(s);
-      setStatusRef.current(s);
-
-      if (s === "connected") {
-        // Give the server 800ms to send sync-step-2
-        // If no update arrives, assume empty doc and seed
+      cbRef.current.setStatus(s);
+      if (s === "connected" && !session.synced) {
+        session.ydoc.on("update", onYDocUpdate);
         syncTimer = setTimeout(() => {
           session.ydoc.off("update", onYDocUpdate);
-          onSynced();
-        }, 800);
-
-        // Also listen for any incoming Y.Doc update
-        session.ydoc.on("update", onYDocUpdate);
+          doSync();
+        }, 1000);
       }
     };
 
     return () => {
       clearTimeout(syncTimer);
       session.ydoc.off("update", onYDocUpdate);
-      if (sessions.has(documentId)) {
-        const s = sessions.get(documentId);
-        s.provider._onStatusChange = () => {};
-        s.provider._onPeersChange = () => {};
-      }
-      releaseSession(documentId);
+      cleanup(documentId, session);
     };
-  }, [documentId, enabled, initialContent]);
+  // IMPORTANT: only depend on documentId and enabled — NOT initialContent
+  // initialContent is read via ref to avoid triggering reconnects
+  }, [documentId, enabled]);
 
   const session = documentId ? sessions.get(documentId) : null;
 
   return {
-    ydoc: synced ? (session?.ydoc ?? null) : null, // null until synced — editor waits
+    // Return ydoc only when synced — editor waits before mounting
+    ydoc: synced ? (session?.ydoc ?? null) : null,
     awareness: session?.awareness ?? null,
     provider: session?.provider ?? null,
     status,
     peers,
+    // Expose setter so CollaborativeEditor can update initialContent ref
+    setInitialContent: (html) => {
+      if (session) initialContentRef.current = html;
+    },
+    initialContentRef,
   };
+}
+
+function cleanup(documentId, session) {
+  if (sessions.has(documentId)) {
+    session.provider._onStatusChange = () => {};
+    session.provider._onPeersChange = () => {};
+  }
+  releaseSession(documentId);
 }
 
 function randomColor(seed) {
