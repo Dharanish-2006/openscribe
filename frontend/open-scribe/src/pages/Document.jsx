@@ -13,10 +13,7 @@ export default function Document() {
   const activeDocRef = useRef(null);
   const titleRef = useRef("");
   const debounceTimer = useRef(null);
-  // Sequence number — incremented on every save attempt
-  // Response is only applied if its seq matches the latest
   const saveSeqRef = useRef(0);
-  // Latest captured HTML — set synchronously in onUpdate
   const pendingContentRef = useRef("");
 
   useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
@@ -44,12 +41,9 @@ export default function Document() {
   const handleSave = useCallback(async () => {
     const doc = activeDocRef.current;
     if (!doc) return;
-
     const content = pendingContentRef.current || doc.content || "";
-    console.log("[save] handleSave — pendingContent:", content?.substring(0, 60), "| doc.content:", doc.content?.substring(0, 40));
     if (!content || content === "<p></p>") return;
 
-    // Stamp this save with a sequence number
     saveSeqRef.current += 1;
     const mySeq = saveSeqRef.current;
 
@@ -59,8 +53,6 @@ export default function Document() {
         title: titleRef.current,
         content,
       });
-
-      // Only apply this response if no newer save has started
       if (mySeq === saveSeqRef.current) {
         setDocs(prev => prev.map(d => d.id === data.id ? data : d));
         setActiveDoc(data);
@@ -70,25 +62,19 @@ export default function Document() {
     } catch (err) {
       console.error("Save failed", err);
     } finally {
-      if (mySeq === saveSeqRef.current) {
-        setSaving(false);
-      }
+      if (mySeq === saveSeqRef.current) setSaving(false);
     }
   }, []);
 
   const scheduleAutoSave = useCallback((html) => {
-    console.log("[save] scheduleAutoSave called with html:", html?.substring(0, 60));
-    // CRITICAL: if html is empty, ignore completely — do NOT reset timer or update pending
-    // Empty onUpdate fires come from Y.js awareness/sync events, not real user edits
     if (!html || html === "<p></p>" || html.trim() === "") return;
     pendingContentRef.current = html;
     clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(handleSave, 1500);
   }, [handleSave]);
 
-  const flushAndSave = useCallback(async (html) => {
+  const flushAndSave = useCallback(async () => {
     clearTimeout(debounceTimer.current);
-    if (html && html !== "<p></p>") pendingContentRef.current = html;
     await handleSave();
   }, [handleSave]);
 
@@ -113,7 +99,7 @@ export default function Document() {
     if (!saved) await flushAndSave();
     setActiveDoc(doc);
     setTitle(doc.title);
-    pendingContentRef.current = doc.content || "";  // prime with DB content
+    pendingContentRef.current = doc.content || "";
     setSaved(true);
   };
 
@@ -189,7 +175,7 @@ export default function Document() {
                 <span className={`save-status ${saved ? "saved" : "unsaved"}`}>
                   {saving ? "Saving..." : saved ? "✓ Saved" : "● Unsaved"}
                 </span>
-                <button className="btn-save" onClick={() => flushAndSave()} disabled={saving}>
+                <button className="btn-save" onClick={flushAndSave} disabled={saving}>
                   Save
                 </button>
                 <button className="btn-new" onClick={handleNew}>＋ New</button>

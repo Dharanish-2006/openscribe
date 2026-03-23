@@ -27,7 +27,14 @@ function getOrCreateSession(documentId) {
     ydoc, awareness,
     { onStatusChange: () => {}, onPeersChange: () => {} }
   );
-  const session = { ydoc, awareness, provider, refCount: 1, synced: false };
+  const session = {
+    ydoc, awareness, provider,
+    refCount: 1,
+    synced: false,
+    // null = pending seed html (Y.Doc was empty after sync)
+    // undefined = no seed needed (Y.Doc had server content)
+    pendingHtml: undefined,
+  };
   sessions.set(documentId, session);
   return session;
 }
@@ -76,16 +83,14 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
 
       console.log("[collab] finishSync — xmlFrag.length:", xmlFrag.length, "| html:", html?.substring(0, 60));
 
-      // Y.Doc is empty AND we have saved content → seed it
       if (xmlFrag.length === 0 && html && html.trim() && html !== "<p></p>") {
-        try {
-          // Use a temporary editor instance to parse HTML into Y.Doc correctly
-          // This is the ONLY reliable way — let Tiptap parse its own HTML
-          session._pendingHtml = html;
-          console.log("[collab] marked pendingHtml for editor-based seeding");
-        } catch (e) {
-          console.warn("[collab] seed error:", e.message);
-        }
+        // Y.Doc is empty AND we have DB content → need to seed
+        session.pendingHtml = html;
+        console.log("[collab] pendingHtml set for seeding:", html.substring(0, 40));
+      } else {
+        // Y.Doc already has content from server — DO NOT seed
+        session.pendingHtml = undefined;
+        console.log("[collab] Y.Doc has server content, no seeding needed");
       }
 
       cbRef.current.setSynced(true);
@@ -123,9 +128,9 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
     status,
     peers,
     initialContentRef,
-    // Expose pendingHtml so editor can seed itself correctly via setContent
-    pendingHtml: synced ? (session?._pendingHtml ?? null) : null,
-    clearPendingHtml: () => { if (session) session._pendingHtml = null; },
+    // Only non-undefined when Y.Doc was empty and needs seeding from DB
+    pendingHtml: synced ? (session?.pendingHtml ?? null) : null,
+    clearPendingHtml: () => { if (session) session.pendingHtml = undefined; },
   };
 }
 

@@ -2,6 +2,7 @@
 import Placeholder from "@tiptap/extension-placeholder"
 import { useEffect, useRef, useState, lazy, Suspense } from "react"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
+import { isChangeOrigin } from "@tiptap/extension-collaboration"
 
 import { StarterKit } from "@tiptap/starter-kit"
 import { Image } from "@tiptap/extension-image"
@@ -34,7 +35,6 @@ export function CollaborativeEditor({
 }) {
   const [mobileView, setMobileView] = useState("main")
   const seededRef = useRef(false)
-  const readyRef = useRef(false) // true only after first real user edit
 
   const { ydoc, awareness, status, peers, initialContentRef, pendingHtml, clearPendingHtml } =
     useCollaboration(documentId)
@@ -83,50 +83,28 @@ export function CollaborativeEditor({
           CollaborationCursorV3.configure({ awareness }),
         ] : []),
       ],
-      onUpdate: ({ editor }) => {
-        const html = editor.getHTML();
-        console.log("[editor] onUpdate html:", html?.substring(0, 60));
-        // Only propagate updates after user has made an intentional edit
-        // The first onUpdate after mount comes from Y.js sync, not user input
-        if (!readyRef.current) return;
-        onUpdate?.({ editor });
-      },
-      onTransaction: ({ transaction }) => {
-        // Mark editor as ready only after the first user-initiated transaction
-        // (transactions with steps = actual content changes by the user)
-        if (!readyRef.current && transaction.docChanged && transaction.steps.length > 0) {
-          // Check it's not from Y.js sync (those have a 'y-sync$' meta)
-          const isYjsUpdate = transaction.getMeta('y-sync$') !== undefined;
-          if (!isYjsUpdate) {
-            readyRef.current = true;
-          }
-        }
+      onUpdate: ({ editor, transaction }) => {
+        // isChangeOrigin is exported by @tiptap/extension-collaboration
+        // It returns true for ALL Y.js sync/update transactions (not user edits)
+        // This is the official Tiptap v3 way to detect Y.js vs user transactions
+        if (isChangeOrigin(transaction)) return
+        onUpdate?.({ editor })
       },
     },
     [ydoc]
   )
 
-  // When editor mounts with an empty Y.Doc and we have saved content,
-  // use editor.commands.setContent — the ONLY reliable way to parse HTML into Y.Doc
+  // Seed editor with DB content when Y.Doc was empty after sync
   useEffect(() => {
-    if (!editor || !pendingHtml || seededRef.current) return;
+    if (!editor || !pendingHtml || seededRef.current) return
+    seededRef.current = true
+    editor.commands.setContent(pendingHtml, true)
+    clearPendingHtml()
+  }, [editor, pendingHtml])
 
-    console.log("[editor] seeding with pendingHtml:", pendingHtml.substring(0, 60));
-    seededRef.current = true;
-
-    // setContent with emitUpdate:true so Y.Doc gets the data
-    // but we need to NOT trigger a save — onUpdate will fire but
-    // Document.jsx scheduleAutoSave with the correct content is fine
-    editor.commands.setContent(pendingHtml, true);
-    clearPendingHtml();
-    console.log("[editor] seed complete. editor.getHTML():", editor.getHTML()?.substring(0, 60));
-  }, [editor, pendingHtml]);
-
-  // Reset on doc switch
   useEffect(() => {
-    seededRef.current = false;
-    readyRef.current = false;
-  }, [documentId]);
+    seededRef.current = false
+  }, [documentId])
 
   useCursorSync(editor, awareness)
 
