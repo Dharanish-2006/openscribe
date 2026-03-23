@@ -80,17 +80,14 @@ export function useCollaboration(documentId, { enabled = true } = {}) {
 
       const xmlFrag = session.ydoc.getXmlFragment("default");
       const html = initialContentRef.current;
+      const hasRemoteContent = yDocHasMeaningfulContent(xmlFrag);
 
-      console.log("[collab] finishSync — xmlFrag.length:", xmlFrag.length, "| html:", html?.substring(0, 60));
-
-      if (xmlFrag.length === 0 && html && html.trim() && html !== "<p></p>") {
+      if (!hasRemoteContent && html && html.trim() && html !== "<p></p>") {
         // Y.Doc is empty AND we have DB content → need to seed
         session.pendingHtml = html;
-        console.log("[collab] pendingHtml set for seeding:", html.substring(0, 40));
       } else {
         // Y.Doc already has content from server — DO NOT seed
         session.pendingHtml = undefined;
-        console.log("[collab] Y.Doc has server content, no seeding needed");
       }
 
       cbRef.current.setSynced(true);
@@ -148,4 +145,19 @@ function randomColor(seed) {
     hash = seed.charCodeAt(i) + ((hash << 5) - hash);
   }
   return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`;
+}
+
+function yDocHasMeaningfulContent(xmlFrag) {
+  if (!xmlFrag || xmlFrag.length === 0) return false;
+  if (xmlFrag.length > 1) return true;
+
+  const textContent = xmlFrag
+    .toString()
+    .replace(/<[^>]+>/g, "")
+    .replace(/\u200b/g, "")
+    .trim();
+  if (textContent.length > 0) return true;
+
+  const firstNode = xmlFrag.get(0);
+  return firstNode?.nodeName !== "paragraph";
 }
